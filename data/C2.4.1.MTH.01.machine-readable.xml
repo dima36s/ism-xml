@@ -1,0 +1,863 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="ism-regulation-view.xsl"?>
+<!--
+  Эталонный машиночитаемый XML регламента C2.4.1.MTH.01 «Методика по разработке функциональных
+  моделей информационных систем», версия 1.0. Источник: C2.4.1.MTH.01 (версия 1.0).docx.
+  Схема: ism-regulation-v1.xsd 1.1.
+
+  Document Layer  — <section>/<clause>/<text>: дословный текст документа с исходной нумерацией.
+  Knowledge Layer — <requirement> (атомарные требования), <scope>, <roles>, <objects>, <semanticLinks>.
+  Каждое атомарное требование вложено в свой пункт и несёт дословную цитату <quote>;
+  сборка проверяет, что цитата действительно есть в тексте пункта.
+-->
+<ismDocument xmlns="urn:protech:ism:regulation:1.0"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="urn:protech:ism:regulation:1.0 ism-regulation-v1.xsd"
+ id="C2.4.1.MTH.01" version="1.0" status="draft">
+
+ <metadata>
+  <title>Методика по разработке функциональных моделей информационных систем</title>
+  <documentType code="MTH">Методика</documentType>
+  <organization>ООО «ПроТех Инжиниринг»</organization>
+  <processRef id="C2.4.1">Управление портфелем информационных технологий</processRef>
+  <processPath>
+   <process id="C2">Информационное обеспечение (Информационные технологии и цифровизации)</process>
+   <process id="C2.4">Развитие ИТ-систем</process>
+   <process id="C2.4.1">Управление портфелем информационных технологий</process>
+  </processPath>
+  <owner role="process-owner">Руководитель департамента цифровизации инжиниринга и платформ</owner>
+  <manager role="process-manager">Начальник отдела цифрового развития процессов</manager>
+  <developer role="developer">Руководитель проектов отдела цифрового развития процессов</developer>
+  <developer role="developer">Главный специалист отдела цифрового развития процессов</developer>
+  <methodologist role="ism-methodologist">Главный специалист отдела интегрированной системы менеджмента</methodologist>
+ </metadata>
+
+ <scope>
+  <applicability>
+   <condition clause="CL-2.1.2">Описание функциональных моделей, разрабатываемых для вновь введенного функционала информационных систем</condition>
+  </applicability>
+  <audience ref="ROLE-DIGITALIZATION-UNIT" clause="CL-2.1.3"/>
+ </scope>
+
+ <changeHistory>
+  <change version="1.0"><basis>Приказ от __.__.____ №__________</basis><description>Введен впервые</description></change>
+ </changeHistory>
+
+ <terms>
+  <note>Термины, сокращения и определения актуальны на момент утверждения документа</note>
+  <term id="TERM-MODULE-OWNER">
+   <name>Владелец модуля информационной системы</name><abbreviation>Владелец модуля</abbreviation>
+   <definition>лицо или подразделение Предприятия, обеспечивающее принятие решений относительно изменений функциональности модуля по инициативам сотрудников предприятия, оценку качества оказываемых ИТ-сервисов интегратора, полное соответствия требований бизнеса реализуемым изменениям и поддерживаемому функционалу модуля</definition>
+  </term>
+  <term id="TERM-ENTERPRISE">
+   <name>Предприятие</name>
+   <definition>ООО "ПроТех Инжиниринг"</definition>
+  </term>
+  <term id="TERM-PROCESS">
+   <name>Процесс</name>
+   <definition>циклический, повторяющийся порядок взаимосвязанных действий, преобразующих входы в заранее определенные выходы, влияющих на достижение цели и представляющих ценность для потребителя внутреннего или внешнего</definition>
+  </term>
+  <term id="TERM-PROCESS-SCHEME">
+   <name>Схема процесса</name>
+   <definition>визуальное описание процесса в виде блок-схемы в нотации BPMN (Business Process Model and Notation)</definition>
+  </term>
+  <term id="TERM-FM">
+   <name>Функциональная модель информационной системы</name><abbreviation>ФМ</abbreviation>
+   <definition>структурированное представление информации о процессах, функциях и операциях, выполняемых информационной системой для достижения поставленных целей.</definition>
+   <note>ФМ описывает последовательность действий, необходимых для обработки информации, взаимодействия компонентов информационной системы друг с другом и пользователями, а также определяет границы ответственности каждого элемента информационной системы</note>
+   <note>ФМ интегрируется в модель бизнес-процесса в том числе на формализованном уровне (схемы, текст) после ввода разработанного решения в промышленную эксплуатацию</note>
+  </term>
+  <term id="TERM-FC">
+   <name>Функциональный заказчик</name><abbreviation>ФЗ</abbreviation>
+   <definition>владелец процесса, представитель подразделения, который определяет функциональные требования к разрабатываемому или модернизируемому модулю информационной системы, принимает участие в согласовании технических решений, контролирует реализацию проектов инициатив и проектов цифровизации и обеспечивает соответствие конечного результата бизнес-задачам своего направления деятельности. Напрямую получает бизнес-выгоды от реализации проекта цифровизации</definition>
+  </term>
+  <term id="TERM-DIGITALIZATION">
+   <name>Цифровизация процесса</name>
+   <definition>преобразование традиционного бизнес-процесса путем интеграции цифровых технологий, обеспечивающих доступ к данным, повышение прозрачности, оптимизацию управления и принятие решений на основе аналитики</definition>
+  </term>
+  <term id="TERM-BPMN">
+   <name>Business Process Model and Notation</name><abbreviation>BPMN</abbreviation>
+   <definition>нотация для описания процессов в виде схемы, показывающей последовательность действий и участников.</definition>
+  </term>
+  <term id="TERM-DFD">
+   <name>Data Flow Diagram / Диаграмма потоков данных</name><abbreviation>DFD – диаграмма</abbreviation>
+   <definition>визуальная схема, которая показывает, как информация движется внутри системы, откуда она приходит, где обрабатывается, где хранится и куда передается в итоге</definition>
+  </term>
+ </terms>
+
+ <roles>
+  <role id="ROLE-DIGITALIZATION-UNIT" type="org-unit">
+   <name>Подразделение, обеспечивающее цифровизацию бизнес-процессов</name>
+   <alias>Подразделение обеспечивающее цифровизацию бизнес-процессов</alias>
+   <alias>подразделения Предприятия, обеспечивающие цифровизацию бизнес-процессов и сопровождение цифровых инструментов</alias>
+  </role>
+  <role id="ROLE-MODULE-OWNER" type="business-role">
+   <name>Владелец модуля информационной системы</name>
+   <alias>Владелец модуля</alias>
+   <alias>Владельцы модулей</alias>
+  </role>
+  <role id="ROLE-FUNCTIONAL-CUSTOMER" type="business-role">
+   <name>Функциональный заказчик</name>
+   <alias>ФЗ</alias>
+  </role>
+  <role id="ROLE-PROCESS-MANAGER" type="business-role">
+   <name>Менеджер процесса</name>
+   <alias>менеджеры процессов</alias>
+  </role>
+  <role id="ROLE-MODULE-USER" type="user-group">
+   <name>Пользователь модуля информационной системы</name>
+   <alias>пользователи модулей информационной системы</alias>
+  </role>
+ </roles>
+
+ <objects>
+  <object id="OBJ-FUNCTIONAL-MODEL" type="document"><name>Функциональная модель информационной системы</name><alias>ФМ</alias></object>
+  <object id="OBJ-FM-TEXT-PART" type="document-part"><name>Текстовая (описательная) часть ФМ</name></object>
+  <object id="OBJ-FM-GRAPHIC-PART" type="document-part"><name>Графическая часть ФМ</name></object>
+  <object id="OBJ-FM-SEC-PURPOSE" type="document-section"><name>Раздел «Назначение и основные функции модуля информационной системы»</name></object>
+  <object id="OBJ-FM-SEC-ROLES" type="document-section"><name>Раздел «Бизнес-роли и их функции в информационной системе»</name></object>
+  <object id="OBJ-FM-SEC-DATA-IO" type="document-section"><name>Раздел «Входные и выходные данные, поставщик/потребитель»</name></object>
+  <object id="OBJ-FM-SEC-PROCESSING" type="document-section"><name>Раздел «Внутренний процесс преобразования данных и взаимодействие с другими модулями»</name></object>
+  <object id="OBJ-PROCESS-SCHEME" type="diagram"><name>Схема процесса</name><alias>визуальная схема процесса в нотации BPMN 2.0</alias><externalCode scheme="BPMN 2.0">bpmn:process</externalCode></object>
+  <object id="OBJ-DFD" type="diagram"><name>DFD-диаграмма</name><alias>Диаграмма потоков данных</alias></object>
+  <object id="OBJ-PROCESS-MODEL" type="model"><name>Процессная модель</name></object>
+  <object id="OBJ-SYSTEM-MODEL" type="model"><name>Системная модель функционала</name></object>
+  <object id="OBJ-PROCESS-ROLE" type="concept"><name>Роль (в процессе)</name></object>
+  <object id="OBJ-PROCESS-PARTICIPANT" type="concept"><name>Участник процесса</name></object>
+  <object id="OBJ-BPMN-EVENT" type="notation-element">
+   <name>Событие</name>
+   <description>Кружок; показывает начало, промежуточные шаги и завершение процесса.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:startEvent</externalCode>
+   <externalCode scheme="BPMN 2.0">bpmn:intermediateCatchEvent</externalCode>
+   <externalCode scheme="BPMN 2.0">bpmn:intermediateThrowEvent</externalCode>
+   <externalCode scheme="BPMN 2.0">bpmn:endEvent</externalCode>
+  </object>
+  <object id="OBJ-BPMN-ACTIVITY" type="notation-element">
+   <name>Действие (операция)</name>
+   <description>Прямоугольник с закругленными углами; конкретная операция внутри процесса.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:task</externalCode>
+  </object>
+  <object id="OBJ-BPMN-SEQUENCE-FLOW" type="notation-element">
+   <name>Поток управления</name>
+   <description>Стрелка; определяет последовательность операций.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:sequenceFlow</externalCode>
+  </object>
+  <object id="OBJ-BPMN-EXCLUSIVE-GATEWAY" type="notation-element">
+   <name>Исключающий шлюз</name>
+   <description>Ромб; альтернативные потоки процесса или сходящиеся потоки управления.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:exclusiveGateway</externalCode>
+  </object>
+  <object id="OBJ-BPMN-PARALLEL-GATEWAY" type="notation-element">
+   <name>Параллельный шлюз</name>
+   <description>Ромб со знаком «+»; слияние, ветвление и соединение параллельных потоков управления.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:parallelGateway</externalCode>
+  </object>
+  <object id="OBJ-BPMN-POOL" type="notation-element">
+   <name>Пул</name>
+   <description>Логически обособленная область, представляющая участника процесса.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:participant</externalCode>
+  </object>
+  <object id="OBJ-BPMN-LANE" type="notation-element">
+   <name>Дорожка</name>
+   <description>Зона ответственности отдельного подразделения или роли в процессе.</description>
+   <externalCode scheme="BPMN 2.0">bpmn:lane</externalCode>
+  </object>
+ </objects>
+
+ <body>
+
+  <!-- ============================== 1 ============================== -->
+  <section id="S1" number="1" title="Термины, сокращения и определения">
+   <termList/>
+  </section>
+
+  <!-- ============================== 2 ============================== -->
+  <section id="S2" number="2" title="Область применения">
+   <section id="S2.1" number="2.1" title="Назначение документа">
+    <clause id="CL-2.1.1" number="2.1.1" type="informative">
+     <text><p>Методика по разработке функциональных моделей информационных систем определяет порядок и правила описания функций информационных систем (далее - Методика).</p></text>
+    </clause>
+    <clause id="CL-2.1.2" number="2.1.2" type="scope">
+     <text><p>Методика применяется для процесса/операций описания функциональных моделей, разрабатываемых для вновь введенного функционала информационных систем.</p></text>
+    </clause>
+    <clause id="CL-2.1.3" number="2.1.3" type="scope">
+     <text><p>Методикой руководствуются подразделения Предприятия, обеспечивающие цифровизацию бизнес-процессов и сопровождение цифровых инструментов.</p></text>
+    </clause>
+   </section>
+  </section>
+
+  <!-- ============================== 3 ============================== -->
+  <section id="S3" number="3" title="Общие требования">
+
+   <section id="S3.1" number="3.1" title="Цели и задачи функциональной модели">
+    <clause id="CL-3.1.1" number="3.1.1" type="informative">
+     <text><p>Цель функциональной модели – наглядное отображение основных функциональных возможностей информационной системы, позволяющих разработчикам и пользователям информационной системы целостнее понимать структуру и принципы функционирования разработанного решения.</p></text>
+    </clause>
+    <clause id="CL-3.1.2" number="3.1.2" type="informative">
+     <text>
+      <p>Задачи, решаемые функциональной моделью:</p>
+      <list style="dash">
+       <item>описание функций: детальное описание операций, выполняемых информационной системой, и их взаимосвязи друг с другом и с пользовательскими операциями;</item>
+       <item>описание архитектурных решений: описание взаимодействия компонентов информационной системы друг с другом, с пользователями и распределения ответственности между ними.</item>
+       <item>выявление недостатков: обнаружение возможных проблемных областей в рамках оптимизации, автоматизации, цифровизации бизнес-процессов.</item>
+      </list>
+     </text>
+    </clause>
+    <clause id="CL-3.1.3" number="3.1.3" type="normative">
+     <text>
+      <p>Основные положения:</p>
+      <p>ФМ описывает последовательность действий, необходимых для обработки информации, взаимодействия компонентов информационной системы друг с другом и пользователями, а также определяет границы ответственности каждого элемента информационной системы. ФМ интегрируется в модель бизнес-процесса в том числе на формализованном уровне (схема процесса, текст) после ввода разработанного решения в промышленную эксплуатацию.</p>
+      <p>ФМ позволяет выявить возможные недостатки архитектуры, оценить сложность реализации отдельных модулей и обеспечить согласованность всех элементов информационной системы, а также дополнить понимание организации бизнес-процесса</p>
+     </text>
+     <requirement id="REQ-C2.4.1-MTH01-3.1.3-01" number="3.1.3" modality="shall" modalityBasis="implicit" kind="process-rule" source="derived">
+      <statement>После ввода разработанного решения в промышленную эксплуатацию ФМ интегрируется в модель бизнес-процесса, в том числе на формализованном уровне (схема процесса, текст).</statement>
+      <quote>ФМ интегрируется в модель бизнес-процесса в том числе на формализованном уровне (схема процесса, текст) после ввода разработанного решения в промышленную эксплуатацию.</quote>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+      <object ref="OBJ-PROCESS-SCHEME"/>
+      <applicability><condition>После ввода разработанного решения в промышленную эксплуатацию</condition></applicability>
+      <tags><tag>lifecycle</tag><tag>process-model</tag></tags>
+     </requirement>
+    </clause>
+   </section>
+
+   <section id="S3.2" number="3.2" title="Ключевые пользователи функциональной модели">
+    <clause id="CL-3.2.1" number="3.2.1" type="informative">
+     <text>
+      <p>Ключевыми пользователями ФМ являются:</p>
+      <list style="dash">
+       <item>менеджеры процессов;</item>
+       <item>владельцы модулей информационной системы;</item>
+       <item>пользователи модулей информационной системы.</item>
+      </list>
+     </text>
+    </clause>
+   </section>
+
+   <section id="S3.3" number="3.3" title="Участники формирования функциональной модели">
+    <clause id="CL-3.3" number="3.3" type="normative">
+     <text>
+      <table>
+       <head><cell>Участники</cell><cell>Функция</cell></head>
+       <row>
+        <cell>Подразделение обеспечивающее цифровизацию бизнес-процессов</cell>
+        <cell><list style="dash">
+         <item>описание текстовой части ФМ</item>
+         <item>актуализация схемы процесса с учетом выполняемых операций информационной системой</item>
+         <item>актуализация/оптимизация ФМ</item>
+         <item>согласование с владельцами модулей и ФЗ новой редакции ФМ взамен ранее утвержденной</item>
+        </list></cell>
+       </row>
+       <row>
+        <cell>Владельцы модулей</cell>
+        <cell><list style="dash"><item>согласование ФМ</item></list></cell>
+       </row>
+       <row>
+        <cell>ФЗ</cell>
+        <cell><list style="dash"><item>утверждение ФМ</item></list></cell>
+       </row>
+      </table>
+     </text>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-01" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, описывает текстовую часть ФМ.</statement>
+      <quote>описание текстовой части ФМ</quote>
+      <subject ref="ROLE-DIGITALIZATION-UNIT"/>
+      <action code="describe">описание</action>
+      <object ref="OBJ-FM-TEXT-PART"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-02" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, актуализирует схему процесса с учетом операций, выполняемых информационной системой.</statement>
+      <quote>актуализация схемы процесса с учетом выполняемых операций информационной системой</quote>
+      <subject ref="ROLE-DIGITALIZATION-UNIT"/>
+      <action code="actualize">актуализация</action>
+      <object ref="OBJ-PROCESS-SCHEME"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-03" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, актуализирует ФМ.</statement>
+      <quote>актуализация/оптимизация ФМ</quote>
+      <subject ref="ROLE-DIGITALIZATION-UNIT"/>
+      <action code="actualize">актуализация</action>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-04" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, оптимизирует ФМ.</statement>
+      <quote>актуализация/оптимизация ФМ</quote>
+      <subject ref="ROLE-DIGITALIZATION-UNIT"/>
+      <action code="optimize">оптимизация</action>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-05" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, согласовывает новую редакцию ФМ, выпускаемую взамен ранее утвержденной, с владельцами модулей и ФЗ.</statement>
+      <quote>согласование с владельцами модулей и ФЗ новой редакции ФМ взамен ранее утвержденной</quote>
+      <subject ref="ROLE-DIGITALIZATION-UNIT"/>
+      <action code="coordinate-agreement">согласование</action>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+      <counterpart ref="ROLE-MODULE-OWNER"/>
+      <counterpart ref="ROLE-FUNCTIONAL-CUSTOMER"/>
+      <applicability><condition>Выпуск новой редакции ФМ взамен ранее утвержденной</condition></applicability>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-06" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>Владельцы модулей согласовывают ФМ.</statement>
+      <quote>согласование ФМ</quote>
+      <subject ref="ROLE-MODULE-OWNER"/>
+      <action code="agree">согласование</action>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-3.3-07" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+      <statement>ФЗ утверждает ФМ.</statement>
+      <quote>утверждение ФМ</quote>
+      <subject ref="ROLE-FUNCTIONAL-CUSTOMER"/>
+      <action code="approve">утверждение</action>
+      <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     </requirement>
+    </clause>
+   </section>
+
+   <section id="S3.4" number="3.4" title="Взаимосвязь описательных моделей">
+    <clause id="CL-3.4.1" number="3.4.1" type="definition">
+     <text><p>Процессная модель – структурированное представление процессов организации, информационной системы или бизнес-функций, показывающее последовательность действий, участвующих лиц и используемые инструменты. Акцент делается на потоке работ и взаимодействии ролей внутри процесса.</p></text>
+    </clause>
+    <clause id="CL-3.4.2" number="3.4.2" type="definition">
+     <text><p>Функциональная модель – детальное описание функций и операций информационной системы бизнес-функции или организации, включая описание каждого элемента и механизма функционирования, независимо от последовательности действий. Акцент делается на структуре и составе функциональных элементов.</p></text>
+    </clause>
+    <clause id="CL-3.4.3" number="3.4.3" type="definition">
+     <text><p>Системная модель функционала – комплексная структура, объединяющая функциональные элементы и процессы в единую систему. Рассматривает взаимодействие всех компонентов информационной системы, обеспечивая целостное понимание функционирования всей структуры.</p></text>
+    </clause>
+    <clause id="CL-3.4.4" number="3.4.4" type="informative">
+     <text>
+      <p>Основные параметры описательных моделей:</p>
+      <table>
+       <head><cell>Параметр</cell><cell>Процессная модель</cell><cell>Функциональная модель</cell><cell>Системная модель функционала</cell></head>
+       <row>
+        <cell>Акцент</cell>
+        <cell>последовательность шагов и потоки работ</cell>
+        <cell>описание функций и механизмов</cell>
+        <cell>интеграция функций и процессов в единое целое</cell>
+       </row>
+       <row>
+        <cell>Основная цель</cell>
+        <cell>оптимизация и управление процессом выполнения задач</cell>
+        <cell>детализация внутренних функций и взаимодействий</cell>
+        <cell>комплексный взгляд на функционирование информационной системы</cell>
+       </row>
+       <row>
+        <cell>Предназначение</cell>
+        <cell><list style="dash"><item>обеспечивает временную последовательность и динамику исполнения;</item><item>описывает порядок взаимодействия участников и ресурсов</item></list></cell>
+        <cell><list style="dash"><item>раскрывает состав и устройство отдельных функций;</item><item>позволяет детально разобраться в механизме каждой отдельной части информационной системы</item></list></cell>
+        <cell><list style="dash"><item>позволяет увидеть общую картину взаимодействия процессов и функций;</item><item>помогает определить роль каждого компонента в общей информационной системе</item></list></cell>
+       </row>
+       <row>
+        <cell>Основные компоненты</cell>
+        <cell><list style="dash"><item>процессы</item><item>участники</item><item>события</item><item>инструменты</item></list></cell>
+        <cell><list style="dash"><item>функции</item><item>операции</item><item>механизмы</item></list></cell>
+        <cell><list style="dash"><item>система</item><item>подсистемы</item><item>интеграция функций и процессов</item></list></cell>
+       </row>
+       <row>
+        <cell>Методология анализа</cell>
+        <cell><list style="dash"><item>анализ последовательностей, временных интервалов</item></list></cell>
+        <cell><list style="dash"><item>декомпозиция функций</item><item>иерархия</item></list></cell>
+        <cell><list style="dash"><item>системный анализ</item><item>межфункциональные связи</item></list></cell>
+       </row>
+       <row>
+        <cell>Примеры инструментов</cell>
+        <cell><list style="dash"><item>BPMN-диаграммы</item><item>IDEF-диаграммы</item></list></cell>
+        <cell><list style="dash"><item>DFD-диаграммы (адаптированные / интегрированные под BPMN)</item></list></cell>
+        <cell><list style="dash"><item>архитектурные схемы</item><item>ER-модели</item></list></cell>
+       </row>
+      </table>
+     </text>
+    </clause>
+   </section>
+  </section>
+
+  <!-- ============================== 4 ============================== -->
+  <section id="S4" number="4" title="Правила описания функциональной модели">
+
+   <clause id="CL-4-intro" type="normative">
+    <text><p>ФМ представляет собой комплексное описание информационной системы/части информационной системы, которое включает две ключевые составляющие: описательную (текстовую) и графическую часть.</p></text>
+    <requirement id="REQ-C2.4.1-MTH01-4-01" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <statement>ФМ должна включать описательную (текстовую) часть.</statement>
+     <quote>две ключевые составляющие: описательную (текстовую) и графическую часть</quote>
+     <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <object ref="OBJ-FM-TEXT-PART"/>
+     <verification method="document-review"/>
+    </requirement>
+    <requirement id="REQ-C2.4.1-MTH01-4-02" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <statement>ФМ должна включать графическую часть.</statement>
+     <quote>две ключевые составляющие: описательную (текстовую) и графическую часть</quote>
+     <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <object ref="OBJ-FM-GRAPHIC-PART"/>
+     <verification method="document-review"/>
+    </requirement>
+   </clause>
+
+   <section id="S4.1" number="4.1" title="Основные требования к описанию текстовой части функциональной модели">
+
+    <clause id="CL-4.1.1" number="4.1.1" type="normative">
+     <text>
+      <p>Текстовая часть состоит из типовой структуры и включает в себя:</p>
+      <list style="dash">
+       <item>назначения и основные функции модуля информационной системы;</item>
+       <item>бизнес-роли и их функции, применяемые информационной системой;</item>
+       <item>входные и выходные данные, поставщик/потребитель;</item>
+       <item>внутренний процесс преобразования данных и взаимодействиями с другими модулями/информационными системами.</item>
+      </list>
+     </text>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-01" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+      <statement>Текстовая часть ФМ должна включать раздел о назначении и основных функциях модуля информационной системы.</statement>
+      <quote>назначения и основные функции модуля информационной системы</quote>
+      <object ref="OBJ-FM-TEXT-PART"/>
+      <object ref="OBJ-FM-SEC-PURPOSE"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-02" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+      <statement>Текстовая часть ФМ должна включать раздел о бизнес-ролях и их функциях в информационной системе.</statement>
+      <quote>бизнес-роли и их функции, применяемые информационной системой</quote>
+      <object ref="OBJ-FM-TEXT-PART"/>
+      <object ref="OBJ-FM-SEC-ROLES"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-03" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+      <statement>Текстовая часть ФМ должна включать раздел о входных и выходных данных с указанием поставщика/потребителя.</statement>
+      <quote>входные и выходные данные, поставщик/потребитель</quote>
+      <object ref="OBJ-FM-TEXT-PART"/>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-04" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+      <statement>Текстовая часть ФМ должна включать раздел о внутреннем процессе преобразования данных и взаимодействии с другими модулями/информационными системами.</statement>
+      <quote>внутренний процесс преобразования данных и взаимодействиями с другими модулями/информационными системами</quote>
+      <object ref="OBJ-FM-TEXT-PART"/>
+      <object ref="OBJ-FM-SEC-PROCESSING"/>
+      <verification method="document-review"/>
+     </requirement>
+    </clause>
+
+    <clause id="CL-4.1.2" number="4.1.2" type="normative">
+     <text>
+      <p>Назначение и основные функции модуля информационной системы:</p>
+      <p>Пункт должен подробно раскрывать ключевые цели, преследуемые при внедрении рассматриваемого модуля, а также представлять полный перечень всех основных операций, осуществляемых данным модулем. Его задача заключается в демонстрации четкого понимания того, каким именно способом этот модуль помогает решать конкретные бизнес-задачи Предприятия, облегчая выполнение повседневных рабочих процессов и существенно повышая общую производительность труда сотрудников. Особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия, что в конечном итоге ведет к значительному росту эффективности.</p>
+     </text>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-01" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <statement>Раздел о назначении и основных функциях модуля должен подробно раскрывать ключевые цели, преследуемые при внедрении модуля.</statement>
+      <quote>Пункт должен подробно раскрывать ключевые цели, преследуемые при внедрении рассматриваемого модуля</quote>
+      <object ref="OBJ-FM-SEC-PURPOSE"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-02" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <statement>Раздел о назначении и основных функциях модуля должен содержать полный перечень всех основных операций, осуществляемых модулем.</statement>
+      <quote>а также представлять полный перечень всех основных операций, осуществляемых данным модулем</quote>
+      <object ref="OBJ-FM-SEC-PURPOSE"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-03" number="4.1.2" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <statement>Раздел о назначении и основных функциях модуля должен показывать, каким способом модуль помогает решать конкретные бизнес-задачи Предприятия.</statement>
+      <quote>Его задача заключается в демонстрации четкого понимания того, каким именно способом этот модуль помогает решать конкретные бизнес-задачи Предприятия</quote>
+      <object ref="OBJ-FM-SEC-PURPOSE"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-04" number="4.1.2" modality="should" modalityBasis="implicit" kind="content" source="derived">
+      <statement>В разделе о назначении и основных функциях модуля особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия.</statement>
+      <quote>Особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия</quote>
+      <object ref="OBJ-FM-SEC-PURPOSE"/>
+      <verification method="document-review"/>
+     </requirement>
+    </clause>
+
+    <clause id="CL-4.1.3" number="4.1.3" type="normative">
+     <text><p>Бизнес-роли и их функции в информационной системе.</p></text>
+     <clause id="CL-4.1.3-a" label="а)" type="normative">
+      <text>
+       <p>Общее назначение раздела:</p>
+       <p>В разделе должна быть представлена подробная классификация категорий пользователей, непосредственно вовлеченных в работу с данным модулем информационной системы, а также четко обозначены их полномочия и функциональные возможности внутри рамок предоставляемого информационной системой набора функций.</p>
+       <p>Главная задача подраздела состоит в обеспечении ясного и прозрачного распределения обязанностей среди различных групп пользователей, установлении границ их компетенций и определении объема полномочий относительно конкретных элементов функциональности информационной системы.</p>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-01" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+       <statement>Раздел о бизнес-ролях должен содержать подробную классификацию категорий пользователей, непосредственно вовлеченных в работу с модулем информационной системы.</statement>
+       <quote>В разделе должна быть представлена подробная классификация категорий пользователей, непосредственно вовлеченных в работу с данным модулем информационной системы</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-02" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+       <statement>В разделе о бизнес-ролях должны быть четко обозначены полномочия и функциональные возможности категорий пользователей в рамках набора функций, предоставляемого информационной системой.</statement>
+       <quote>а также четко обозначены их полномочия и функциональные возможности внутри рамок предоставляемого информационной системой набора функций</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+     </clause>
+     <clause id="CL-4.1.3-b" label="б)" type="normative">
+      <text>
+       <p>Требования к содержанию раздела:</p>
+       <list style="bullet">
+        <item>описание бизнес-роли: для каждой отдельной роли должно быть представлено подробное описание её назначения и области ответственности;</item>
+        <item>определение перечня основных функций с привязкой к системным ролям: каждая роль должна иметь четко обозначенный список возможных операций, выполняемых в информационной системе. Функции приводятся с указанием конкретных возможностей и ограничений;</item>
+        <item>ограничение функционала и контроля доступа: чётко сформулированы ограничения по доступу к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя.</item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-01" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+       <statement>Для каждой бизнес-роли должно быть представлено подробное описание ее назначения.</statement>
+       <quote>для каждой отдельной роли должно быть представлено подробное описание её назначения и области ответственности</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-02" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+       <statement>Для каждой бизнес-роли должно быть представлено подробное описание ее области ответственности.</statement>
+       <quote>для каждой отдельной роли должно быть представлено подробное описание её назначения и области ответственности</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-03" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="authoritative">
+       <statement>Каждая роль должна иметь четко обозначенный список возможных операций, выполняемых в информационной системе.</statement>
+       <quote>каждая роль должна иметь четко обозначенный список возможных операций, выполняемых в информационной системе</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-04" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>Функции бизнес-ролей должны быть привязаны к системным ролям информационной системы.</statement>
+       <quote>определение перечня основных функций с привязкой к системным ролям</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-05" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="authoritative">
+       <statement>Функции приводятся с указанием конкретных возможностей и ограничений.</statement>
+       <quote>Функции приводятся с указанием конкретных возможностей и ограничений</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-06" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>В разделе должны быть четко сформулированы ограничения доступа к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя.</statement>
+       <quote>чётко сформулированы ограничения по доступу к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя</quote>
+       <object ref="OBJ-FM-SEC-ROLES"/>
+       <verification method="document-review"/>
+       <tags><tag>access-control</tag></tags>
+      </requirement>
+     </clause>
+    </clause>
+
+    <clause id="CL-4.1.4" number="4.1.4" type="normative">
+     <text>
+      <p>Входные и выходные данные, поставщик/потребитель.</p>
+      <p>В разделе должно быть представлено детальное рассмотрение структуры движения информационных потоков, протекающих через всю информационную систему до начала внутренней процедуры обработки и после полного завершения всех предусмотренных этапов преобразования данных. Основной целью подобного изложения является наглядное отображение существующих связей между отдельными компонентами информационной системы, а также демонстрация способов взаимодействия внутренних компонентов с внешним.</p>
+     </text>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-01" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <statement>Раздел о входных и выходных данных должен детально рассматривать структуру информационных потоков до начала внутренней процедуры обработки (входные данные).</statement>
+      <quote>В разделе должно быть представлено детальное рассмотрение структуры движения информационных потоков, протекающих через всю информационную систему до начала внутренней процедуры обработки</quote>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+      <tags><tag>data-flow</tag></tags>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-02" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <statement>Раздел о входных и выходных данных должен детально рассматривать структуру информационных потоков после полного завершения всех этапов преобразования данных (выходные данные).</statement>
+      <quote>и после полного завершения всех предусмотренных этапов преобразования данных</quote>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+      <tags><tag>data-flow</tag></tags>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-03" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <statement>Для входных и выходных данных указываются поставщик и потребитель.</statement>
+      <quote>Входные и выходные данные, поставщик/потребитель.</quote>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+      <tags><tag>data-flow</tag></tags>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-04" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <statement>Изложение должно наглядно отображать существующие связи между отдельными компонентами информационной системы.</statement>
+      <quote>наглядное отображение существующих связей между отдельными компонентами информационной системы</quote>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+     </requirement>
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-05" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <statement>Изложение должно демонстрировать способы взаимодействия внутренних компонентов информационной системы с внешними.</statement>
+      <quote>демонстрация способов взаимодействия внутренних компонентов с внешним</quote>
+      <object ref="OBJ-FM-SEC-DATA-IO"/>
+      <verification method="document-review"/>
+     </requirement>
+    </clause>
+
+    <clause id="CL-4.1.5" number="4.1.5" type="normative">
+     <text><p>Внутренний процесс преобразования данных и взаимодействие с другими модулями:</p></text>
+     <clause id="CL-4.1.5-a" label="а)" type="normative">
+      <text>
+       <p>Определение процессов обработки данных</p>
+       <list style="bullet">
+        <item>подробное изложение этапов трансформации исходных данных внутри информационной системы: прием данных, предварительная обработка, фильтрация, нормализация, агрегация и вывод результата (DFD-диаграммы);</item>
+        <item>описание типов используемых алгоритмов анализа и машинного обучения.</item>
+        <item>обозначение форматов хранения промежуточных результатов и итоговых данных.</item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-01" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>В разделе подробно излагаются этапы трансформации исходных данных внутри информационной системы: прием данных, предварительная обработка, фильтрация, нормализация, агрегация и вывод результата.</statement>
+       <quote>подробное изложение этапов трансформации исходных данных внутри информационной системы: прием данных, предварительная обработка, фильтрация, нормализация, агрегация и вывод результата</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <verification method="document-review"/>
+       <tags><tag>data-processing</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-02" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="method" source="derived">
+       <statement>Этапы трансформации данных представляются в виде DFD-диаграмм.</statement>
+       <quote>(DFD-диаграммы)</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <object ref="OBJ-DFD"/>
+       <verification method="document-review"/>
+       <tags><tag>data-processing</tag><tag>dfd</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-03" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>Описываются типы используемых алгоритмов анализа и машинного обучения.</statement>
+       <quote>описание типов используемых алгоритмов анализа и машинного обучения</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <applicability><condition>В модуле используются алгоритмы анализа и/или машинного обучения</condition></applicability>
+       <verification method="document-review"/>
+       <tags><tag>machine-learning</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-04" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>Обозначаются форматы хранения промежуточных результатов и итоговых данных.</statement>
+       <quote>обозначение форматов хранения промежуточных результатов и итоговых данных</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <verification method="document-review"/>
+       <tags><tag>data-storage</tag></tags>
+      </requirement>
+     </clause>
+     <clause id="CL-4.1.5-b" label="б)" type="normative">
+      <text>
+       <p>Взаимодействие с другими компонентами</p>
+       <list style="bullet">
+        <item>детальное перечисление интерфейсов связи с остальными элементами информационной инфраструктуры предприятия (базы данных, ERP-системы, BI-платформы);</item>
+        <item>стандартизация протоколов передачи данных и форматов сообщений, принятых для межмодульного взаимодействия.</item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-01" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>Детально перечисляются интерфейсы связи с остальными элементами информационной инфраструктуры предприятия (базы данных, ERP-системы, BI-платформы).</statement>
+       <quote>детальное перечисление интерфейсов связи с остальными элементами информационной инфраструктуры предприятия (базы данных, ERP-системы, BI-платформы)</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <verification method="document-review"/>
+       <tags><tag>integration</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-02" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+       <statement>Описываются стандартизированные протоколы передачи данных и форматы сообщений, принятые для межмодульного взаимодействия.</statement>
+       <quote>стандартизация протоколов передачи данных и форматов сообщений, принятых для межмодульного взаимодействия</quote>
+       <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <verification method="document-review"/>
+       <tags><tag>integration</tag></tags>
+      </requirement>
+     </clause>
+    </clause>
+   </section>
+
+   <section id="S4.2" number="4.2" title="Основные требования к графической части функциональной модели">
+
+    <clause id="CL-4.2.1" number="4.2.1" type="normative">
+     <text><p>Ключевым элементом описания графической части ФМ является визуальная схема процесса, представленная в нотации стандарта Business Process Model and Notation (BPMN) версии 2.0. данная нотация позволяет структурированно изображать процессы и операции, помогая наглядно демонстрировать этапы выполнения действий, условия принятия решений и потоки данных.</p></text>
+     <requirement id="REQ-C2.4.1-MTH01-4.2.1-01" number="4.2.1" modality="shall" modalityBasis="implicit" kind="method" source="derived">
+      <statement>Ключевым элементом графической части ФМ должна быть визуальная схема процесса в нотации BPMN версии 2.0.</statement>
+      <quote>Ключевым элементом описания графической части ФМ является визуальная схема процесса, представленная в нотации стандарта Business Process Model and Notation (BPMN) версии 2.0.</quote>
+      <object ref="OBJ-FM-GRAPHIC-PART"/>
+      <object ref="OBJ-PROCESS-SCHEME"/>
+      <verification method="model-validation"/>
+      <externalReference ref="REF-BPMN20"/>
+      <tags><tag>bpmn</tag></tags>
+     </requirement>
+    </clause>
+
+    <clause id="CL-4.2.2" number="4.2.2" type="normative">
+     <text><p>Основные принципы формирования нотации BPMN 2.0:</p></text>
+
+     <clause id="CL-4.2.2-a" label="а)" type="normative">
+      <text>
+       <p>Структурная целостность модели</p>
+       <list style="dash">
+        <item>четкое разделение зон ответственности: каждый процесс состоит из последовательных шагов и взаимодействий, отражающих зоны ответственности каждого участника;</item>
+        <item>логическое завершение потоков: процесс начинается и заканчивается определенными пунктами (начало и конец процесса).</item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-01" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived">
+       <statement>На схеме процесса должны быть четко разделены зоны ответственности: шаги и взаимодействия процесса отражают зоны ответственности каждого участника.</statement>
+       <quote>четкое разделение зон ответственности: каждый процесс состоит из последовательных шагов и взаимодействий, отражающих зоны ответственности каждого участника</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <verification method="model-validation"/>
+       <tags><tag>bpmn</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-02" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived">
+       <statement>Процесс должен начинаться и заканчиваться определенными пунктами — началом и концом процесса (в нотации BPMN — начальным и завершающим событиями).</statement>
+       <quote>процесс начинается и заканчивается определенными пунктами (начало и конец процесса)</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-EVENT"/>
+       <verification method="model-validation">
+        <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process[not(bpmn:startEvent) or not(bpmn:endEvent)]</check>
+       </verification>
+       <tags><tag>bpmn</tag></tags>
+      </requirement>
+     </clause>
+
+     <clause id="CL-4.2.2-b" label="б)" type="normative">
+      <text>
+       <p>Использование стандартных символов и условных обозначений</p>
+       <list style="dash">
+        <item>события обозначаются кружками и показывают начало, промежуточные шаги и завершения процессов;<figure src="media/4.2.2b-events.png" alt="Начальное, промежуточное и завершающее события BPMN"/></item>
+        <item>действия (операции) представлены прямоугольниками с закругленными углами и указывают конкретные операции внутри процесса;<figure src="media/4.2.2b-activity.png" alt="Действие (операция) BPMN — прямоугольник с закругленными углами"/></item>
+        <item>потоки управления изображены стрелками и определяют последовательность операций/поток сообщений между участником процесса;<figure src="media/4.2.2b-sequence-flow.png" alt="Поток управления BPMN — стрелка"/></item>
+        <item>шлюзы представляют собой ромбы и используются для принятия решений и разделения потоков:
+         <figure src="media/4.2.2b-exclusive-gateway.png" alt="Исключающий шлюз BPMN — пустой ромб"/>
+         <p>используется для обозначения альтернативных потоков процесса или сходящихся потоков управления в рамках процесса</p>
+         <figure src="media/4.2.2b-parallel-gateway.png" alt="Параллельный шлюз BPMN — ромб со знаком плюс"/>
+         <p>используется для обозначения параллельных потоков процесса: слияния/ветвления/ соединения потоков управления в рамках процесса</p>
+        </item>
+        <item>пулы – логически обособленная область, представляющая участника процесса;</item>
+        <item>дорожки – выделяются зоны ответственности отдельных подразделений или ролей в процессе.<figure src="media/4.2.2b-pool-lanes.png" alt="Пул с двумя дорожками BPMN"/></item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-01" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+       <statement>На схеме процесса используются стандартные символы и условные обозначения BPMN 2.0: события, действия (операции), потоки управления, шлюзы, пулы и дорожки.</statement>
+       <quote>Использование стандартных символов и условных обозначений</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-EVENT"/>
+       <object ref="OBJ-BPMN-ACTIVITY"/>
+       <object ref="OBJ-BPMN-SEQUENCE-FLOW"/>
+       <object ref="OBJ-BPMN-EXCLUSIVE-GATEWAY"/>
+       <object ref="OBJ-BPMN-PARALLEL-GATEWAY"/>
+       <object ref="OBJ-BPMN-POOL"/>
+       <object ref="OBJ-BPMN-LANE"/>
+       <verification method="model-validation"/>
+       <externalReference ref="REF-BPMN20"/>
+       <tags><tag>bpmn</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-02" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+       <statement>Для обозначения альтернативных потоков процесса или сходящихся потоков управления используется исключающий шлюз.</statement>
+       <quote>используется для обозначения альтернативных потоков процесса или сходящихся потоков управления в рамках процесса</quote>
+       <object ref="OBJ-BPMN-EXCLUSIVE-GATEWAY"/>
+       <verification method="model-validation"/>
+       <tags><tag>bpmn</tag><tag>gateway</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-03" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+       <statement>Для обозначения параллельных потоков процесса (слияние, ветвление, соединение потоков управления) используется параллельный шлюз.</statement>
+       <quote>используется для обозначения параллельных потоков процесса: слияния/ветвления/ соединения потоков управления в рамках процесса</quote>
+       <object ref="OBJ-BPMN-PARALLEL-GATEWAY"/>
+       <verification method="model-validation"/>
+       <tags><tag>bpmn</tag><tag>gateway</tag></tags>
+      </requirement>
+     </clause>
+
+     <clause id="CL-4.2.2-v" label="в)" type="normative">
+      <text>
+       <p>Описание ролей и участников процесса.</p>
+       <list style="dash">
+        <item>Различие между ролью и участником процесса:
+         <p>Роль обозначает позицию или обязанность внутри Предприятия, которая описывает определенный круг полномочий и ответственности исполнителя процесса. Роли определяют типы действий, которые сотрудники выполняют в рамках бизнес-процесса.</p>
+         <p>Участник процесса - это организационная единица или информационная система, принимающая участие в выполнении процесса. Участник может представлять собой отдельное подразделение, компанию-партнера, информационную систему и т.п., выполняющую одну или несколько ролей.</p>
+        </item>
+        <item>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</item>
+       </list>
+      </text>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2v-01" number="4.2.2 в)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative">
+       <statement>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</statement>
+       <quote>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-POOL"/>
+       <object ref="OBJ-BPMN-LANE"/>
+       <verification method="model-validation">
+        <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process[bpmn:laneSet]/*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity or self::bpmn:exclusiveGateway or self::bpmn:parallelGateway or self::bpmn:inclusiveGateway or self::bpmn:eventBasedGateway or self::bpmn:complexGateway or self::bpmn:startEvent or self::bpmn:endEvent or self::bpmn:intermediateCatchEvent or self::bpmn:intermediateThrowEvent][not(@id = //bpmn:lane/bpmn:flowNodeRef)] | //bpmn:process[not(bpmn:laneSet)][not(@id = //bpmn:participant/@processRef)]</check>
+       </verification>
+       <tags><tag>bpmn</tag><tag>roles</tag></tags>
+      </requirement>
+     </clause>
+
+     <clause id="CL-4.2.2-g" label="г)" type="normative">
+      <text><p>Четкость и простота структуры: минимизация количества пересекающихся линий (потоков управления).</p></text>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2g-01" number="4.2.2 г)" modality="should" modalityBasis="implicit" kind="modeling-rule" source="derived">
+       <statement>На схеме процесса следует минимизировать количество пересекающихся линий (потоков управления).</statement>
+       <quote>минимизация количества пересекающихся линий (потоков управления)</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-SEQUENCE-FLOW"/>
+       <verification method="expert-review"/>
+       <tags><tag>bpmn</tag><tag>layout</tag></tags>
+      </requirement>
+     </clause>
+
+     <clause id="CL-4.2.2-d" label="д)" type="normative">
+      <text><p>Последовательность и логика потока: каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных. Недопустимы ситуации, когда процессы останавливаются или теряют логику следования, когда процедура/операция является завершающим событием.</p></text>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-01" number="4.2.2 д)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative">
+       <statement>Каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных.</statement>
+       <quote>каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-ACTIVITY"/>
+       <verification method="model-validation">
+        <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process//*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity][not(@id = //bpmn:sequenceFlow/@sourceRef)]</check>
+       </verification>
+       <tags><tag>bpmn</tag></tags>
+      </requirement>
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-02" number="4.2.2 д)" modality="shall-not" modalityBasis="explicit" kind="modeling-rule" source="derived">
+       <statement>Не допускается, чтобы процесс останавливался или терял логику следования, в том числе чтобы процедура/операция являлась завершающим событием процесса.</statement>
+       <quote>Недопустимы ситуации, когда процессы останавливаются или теряют логику следования, когда процедура/операция является завершающим событием.</quote>
+       <object ref="OBJ-PROCESS-SCHEME"/>
+       <object ref="OBJ-BPMN-ACTIVITY"/>
+       <object ref="OBJ-BPMN-EVENT"/>
+       <verification method="model-validation">
+        <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process//*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity or self::bpmn:exclusiveGateway or self::bpmn:parallelGateway or self::bpmn:inclusiveGateway or self::bpmn:eventBasedGateway or self::bpmn:complexGateway or self::bpmn:startEvent or self::bpmn:intermediateCatchEvent or self::bpmn:intermediateThrowEvent][not(@id = //bpmn:sequenceFlow/@sourceRef)]</check>
+       </verification>
+       <tags><tag>bpmn</tag></tags>
+      </requirement>
+     </clause>
+    </clause>
+   </section>
+  </section>
+
+  <!-- ============================== Приложение 1 ============================== -->
+  <section id="SAPP1" number="Приложение 1" title="Нормативные ссылки" kind="appendix">
+   <clause id="CL-APP1" type="normative">
+    <text><p>Список источников актуален на момент утверждения документа. При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</p></text>
+    <requirement id="REQ-C2.4.1-MTH01-APP1-01" number="Приложение 1" modality="shall" modalityBasis="explicit" kind="document-control" source="authoritative">
+     <statement>При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</statement>
+     <quote>При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</quote>
+     <tags><tag>document-control</tag></tags>
+    </requirement>
+   </clause>
+   <referenceList/>
+  </section>
+ </body>
+
+ <references>
+  <reference id="REF-A5.2.5.PLC.01" type="internal" origin="source"><identifier>A5.2.5.PLC.01</identifier><title>Положение "Управление документированной информацией"</title></reference>
+  <reference id="REF-BPMN20" type="standard" origin="derived"><identifier>BPMN 2.0</identifier><title>Business Process Model and Notation</title></reference>
+ </references>
+
+ <semanticLinks>
+  <!-- Ограничения и ссылки -->
+  <link from="REQ-C2.4.1-MTH01-4.2.1-01" to="REF-BPMN20" relation="constrainedBy" clause="CL-4.2.1"/>
+  <link from="REQ-C2.4.1-MTH01-4.2.2b-01" to="REF-BPMN20" relation="constrainedBy" clause="CL-4.2.2-b"/>
+  <link from="C2.4.1.MTH.01" to="REF-A5.2.5.PLC.01" relation="references" clause="CL-APP1"/>
+  <!-- Состав ФМ -->
+  <link from="OBJ-FM-TEXT-PART" to="OBJ-FUNCTIONAL-MODEL" relation="partOf" clause="CL-4-intro"/>
+  <link from="OBJ-FM-GRAPHIC-PART" to="OBJ-FUNCTIONAL-MODEL" relation="partOf" clause="CL-4-intro"/>
+  <link from="OBJ-FM-SEC-PURPOSE" to="OBJ-FM-TEXT-PART" relation="partOf" clause="CL-4.1.1"/>
+  <link from="OBJ-FM-SEC-ROLES" to="OBJ-FM-TEXT-PART" relation="partOf" clause="CL-4.1.1"/>
+  <link from="OBJ-FM-SEC-DATA-IO" to="OBJ-FM-TEXT-PART" relation="partOf" clause="CL-4.1.1"/>
+  <link from="OBJ-FM-SEC-PROCESSING" to="OBJ-FM-TEXT-PART" relation="partOf" clause="CL-4.1.1"/>
+  <link from="OBJ-PROCESS-SCHEME" to="OBJ-FM-GRAPHIC-PART" relation="partOf" clause="CL-4.2.1"/>
+  <!-- Определения -->
+  <link from="OBJ-FUNCTIONAL-MODEL" to="TERM-FM" relation="definedBy"/>
+  <link from="OBJ-FUNCTIONAL-MODEL" to="CL-3.4.2" relation="definedBy" clause="CL-3.4.2"/>
+  <link from="OBJ-PROCESS-SCHEME" to="TERM-PROCESS-SCHEME" relation="definedBy"/>
+  <link from="OBJ-DFD" to="TERM-DFD" relation="definedBy"/>
+  <link from="OBJ-PROCESS-MODEL" to="CL-3.4.1" relation="definedBy" clause="CL-3.4.1"/>
+  <link from="OBJ-SYSTEM-MODEL" to="CL-3.4.3" relation="definedBy" clause="CL-3.4.3"/>
+  <link from="OBJ-PROCESS-ROLE" to="CL-4.2.2-v" relation="definedBy" clause="CL-4.2.2-v"/>
+  <link from="OBJ-PROCESS-PARTICIPANT" to="CL-4.2.2-v" relation="definedBy" clause="CL-4.2.2-v"/>
+  <link from="ROLE-MODULE-OWNER" to="TERM-MODULE-OWNER" relation="definedBy"/>
+  <link from="ROLE-FUNCTIONAL-CUSTOMER" to="TERM-FC" relation="definedBy"/>
+  <!-- Ключевые пользователи ФМ -->
+  <link from="OBJ-FUNCTIONAL-MODEL" to="ROLE-PROCESS-MANAGER" relation="usedBy" clause="CL-3.2.1"/>
+  <link from="OBJ-FUNCTIONAL-MODEL" to="ROLE-MODULE-OWNER" relation="usedBy" clause="CL-3.2.1"/>
+  <link from="OBJ-FUNCTIONAL-MODEL" to="ROLE-MODULE-USER" relation="usedBy" clause="CL-3.2.1"/>
+ </semanticLinks>
+
+ <editorialNotes>
+  <note id="EN-01" type="duplicate" target="TERM-FM">Термин «Функциональная модель информационной системы (ФМ)» приведен в таблице раздела 1 дважды (5-я и 8-я строки). Определения совпадают по смыслу; во второй строке добавлены два абзаца, которые повторяют п. 3.1.3. В XML оставлен один термин: определение из 5-й строки, абзацы 8-й строки перенесены в примечания. Дублирующую строку рекомендуется удалить.</note>
+  <note id="EN-02" type="inconsistency" target="CL-3.4.2">Функциональная модель определена дважды и по-разному: в разделе 1 — как «структурированное представление информации о процессах, функциях и операциях», в п. 3.4.2 — как «детальное описание функций и операций… независимо от последовательности действий». Рекомендуется оставить одно определение либо указать, что п. 3.4.2 описывает отличие ФМ от процессной и системной моделей.</note>
+  <note id="EN-03" type="gap" target="REF-BPMN20">П. 4.2.1 обязывает использовать нотацию BPMN 2.0, но стандарта нет в Приложении 1 «Нормативные ссылки». В XML источник добавлен с признаком origin="derived". Рекомендуется включить его в перечень (OMG BPMN 2.0; ISO/IEC 19510).</note>
+  <note id="EN-04" type="question" target="CL-2.1.2">Область применения (п. 2.1.2) ограничена ФМ для вновь введенного функционала, а п. 3.3 предусматривает актуализацию и оптимизацию ФМ и согласование новой редакции взамен ранее утвержденной. Нужно уточнить, распространяется ли Методика на доработку существующего функционала и на актуализацию уже утвержденных ФМ.</note>
+  <note id="EN-05" type="gap" target="REQ-C2.4.1-MTH01-3.1.3-01">Не указано, кто интегрирует ФМ в модель бизнес-процесса после ввода решения в промышленную эксплуатацию (п. 3.1.3). Ближайшая функция в п. 3.3 — «актуализация схемы процесса…» у подразделения цифровизации, но прямой связи в тексте нет.</note>
+  <note id="EN-06" type="wording" target="CL-4.2.2-b">Поток управления описан как определяющий «последовательность операций/поток сообщений между участником процесса». В BPMN 2.0 это разные элементы: поток управления (sequence flow — сплошная стрелка внутри пула) и поток сообщений (message flow — пунктирная стрелка между пулами). Рекомендуется разделить их и добавить обозначение потока сообщений.</note>
+  <note id="EN-07" type="interpretation">Большая часть нормативных положений изложена в изъявительном наклонении или перечнями без модальных глаголов («текстовая часть включает…», «описание…», «изображены…»). Такие положения размечены как обязательные с признаком modalityBasis="implicit". Для однозначности ключевые положения рекомендуется сформулировать через «должен / не допускается».</note>
+  <note id="EN-08" type="interpretation" target="REQ-C2.4.1-MTH01-4.1.5a-03">Условие применимости требования об описании алгоритмов анализа и машинного обучения (п. 4.1.5 а) выведено из слова «используемых»: если такие алгоритмы в модуле не применяются, описывать нечего. Трактовку стоит подтвердить у методолога.</note>
+  <note id="EN-09" type="inconsistency" target="CL-4.1.1">Названия разделов текстовой части в п. 4.1.1 расходятся с заголовками п. 4.1.3 и 4.1.5: «бизнес-роли и их функции, применяемые информационной системой» / «Бизнес-роли и их функции в информационной системе»; «…взаимодействиями с другими модулями/информационными системами» / «…взаимодействие с другими модулями». Для шаблона ФМ и автоматической проверки нужно одно каноническое название каждого раздела.</note>
+  <note id="EN-10" type="wording">Опечатки и согласование (в XML текст сохранен дословно): п. 4.1.1 — «назначения» (вместо «назначение»), «взаимодействиями» (вместо «взаимодействие»); раздел 1, термин «Владелец модуля» — «полное соответствия»; п. 4.1.4 — «с внешним» (пропущено слово или должно быть «с внешними»; в атомарном требовании 4.1.4-05 принято «с внешними»); п. 4.2.1 — строчная буква после точки («2.0. данная»); п. 4.2.2 б) — «между участником процесса» (вместо «участниками»).</note>
+  <note id="EN-11" type="formatting" target="S4">В конце раздела 4 шесть пустых заголовков второго уровня, после таблицы п. 3.4.4 — пустой пункт. В XML они не переносились.</note>
+ </editorialNotes>
+</ismDocument>

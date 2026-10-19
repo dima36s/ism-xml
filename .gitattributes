@@ -1,0 +1,5 @@
+# Скрипты для Windows храним как есть: CRLF и BOM нужны Windows PowerShell 5.1 и cmd
+*.ps1 -text
+*.bat -text
+*.woff2 binary
+*.png binary

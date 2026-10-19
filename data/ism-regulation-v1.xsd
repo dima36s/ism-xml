@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ism-regulation-v1.xsd — модель машиночитаемого документа ИСМ.
+  Пространство имён urn:protech:ism:regulation:1.0 не меняется (на него завязаны XSLT и xsi:schemaLocation).
+
+  Версия схемы 1.1 (расширение пилота 1.0 под полный регламент C2.4.1.MTH.01).
+  Пилотный XML 1.0 структурно остаётся допустимым: все новые элементы необязательны
+  и вставлены после существующих.
+
+  Что добавлено:
+   - Document Layer: пункты <clause> с дословным текстом (<text>: абзацы, списки, таблицы, рисунки)
+     и вложенными подпунктами а), б)…; места вывода терминов <termList/> и перечня ссылок <referenceList/>;
+   - Knowledge Layer: реестры ролей <roles> и объектов <objects>, область применения <scope>;
+     у атомарного требования — дословная цитата <quote>, действие <action>, несколько объектов,
+     соисполнители <counterpart>, машинные проверки <check>, основание модальности @modalityBasis;
+   - перечисления для status, modality, relation, типа пункта;
+   - контроль целостности: xs:key/xs:keyref — ссылка на несуществующую роль, объект, источник,
+     пункт или требование теперь является ошибкой валидации;
+   - <editorialNotes> — замечания к исходному документу, выявленные при переводе в XML (не нормативны).
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+ xmlns:ism="urn:protech:ism:regulation:1.0"
+ xmlns="urn:protech:ism:regulation:1.0"
+ targetNamespace="urn:protech:ism:regulation:1.0"
+ elementFormDefault="qualified"
+ version="1.1">
+
+ <!-- ===================== Корневой элемент и целостность ссылок ===================== -->
+ <xs:element name="ismDocument" type="IsmDocumentType">
+  <!-- Всё, на что можно сослаться из semanticLinks и editorialNotes -->
+  <xs:key name="linkable">
+   <xs:selector xpath=". | .//ism:section | .//ism:clause | .//ism:requirement | .//ism:terms/ism:term | .//ism:roles/ism:role | .//ism:objects/ism:object | .//ism:references/ism:reference"/>
+   <xs:field xpath="@id"/>
+  </xs:key>
+  <xs:key name="roleKey"><xs:selector xpath=".//ism:roles/ism:role"/><xs:field xpath="@id"/></xs:key>
+  <xs:key name="objectKey"><xs:selector xpath=".//ism:objects/ism:object"/><xs:field xpath="@id"/></xs:key>
+  <xs:key name="referenceKey"><xs:selector xpath=".//ism:references/ism:reference"/><xs:field xpath="@id"/></xs:key>
+  <xs:key name="clauseKey"><xs:selector xpath=".//ism:clause"/><xs:field xpath="@id"/></xs:key>
+
+  <xs:keyref name="subjectRole" refer="roleKey"><xs:selector xpath=".//ism:requirement/ism:subject"/><xs:field xpath="@ref"/></xs:keyref>
+  <xs:keyref name="counterpartRole" refer="roleKey"><xs:selector xpath=".//ism:requirement/ism:counterpart"/><xs:field xpath="@ref"/></xs:keyref>
+  <xs:keyref name="audienceRole" refer="roleKey"><xs:selector xpath=".//ism:scope/ism:audience"/><xs:field xpath="@ref"/></xs:keyref>
+  <xs:keyref name="requirementObject" refer="objectKey"><xs:selector xpath=".//ism:requirement/ism:object"/><xs:field xpath="@ref"/></xs:keyref>
+  <xs:keyref name="externalRef" refer="referenceKey"><xs:selector xpath=".//ism:requirement/ism:externalReference"/><xs:field xpath="@ref"/></xs:keyref>
+  <xs:keyref name="linkFrom" refer="linkable"><xs:selector xpath=".//ism:semanticLinks/ism:link"/><xs:field xpath="@from"/></xs:keyref>
+  <xs:keyref name="linkTo" refer="linkable"><xs:selector xpath=".//ism:semanticLinks/ism:link"/><xs:field xpath="@to"/></xs:keyref>
+  <xs:keyref name="linkClause" refer="clauseKey"><xs:selector xpath=".//ism:semanticLinks/ism:link"/><xs:field xpath="@clause"/></xs:keyref>
+  <xs:keyref name="conditionClause" refer="clauseKey"><xs:selector xpath=".//ism:condition"/><xs:field xpath="@clause"/></xs:keyref>
+  <xs:keyref name="audienceClause" refer="clauseKey"><xs:selector xpath=".//ism:scope/ism:audience"/><xs:field xpath="@clause"/></xs:keyref>
+  <xs:keyref name="noteTarget" refer="linkable"><xs:selector xpath=".//ism:editorialNotes/ism:note"/><xs:field xpath="@target"/></xs:keyref>
+ </xs:element>
+
+ <xs:complexType name="IsmDocumentType">
+  <xs:sequence>
+   <xs:element name="metadata" type="MetadataType"/>
+   <xs:element name="scope" type="ScopeType" minOccurs="0"/>
+   <xs:element name="changeHistory" type="ChangeHistoryType" minOccurs="0"/>
+   <xs:element name="terms" type="TermsType" minOccurs="0"/>
+   <xs:element name="roles" type="RolesType" minOccurs="0"/>
+   <xs:element name="objects" type="ObjectsType" minOccurs="0"/>
+   <xs:element name="body" type="BodyType"/>
+   <xs:element name="references" type="ReferencesType" minOccurs="0"/>
+   <xs:element name="semanticLinks" type="SemanticLinksType" minOccurs="0"/>
+   <xs:element name="editorialNotes" type="EditorialNotesType" minOccurs="0"/>
+  </xs:sequence>
+  <xs:attribute name="id" type="xs:string" use="required"/>
+  <xs:attribute name="version" type="xs:string" use="required"/>
+  <xs:attribute name="status" type="StatusEnum" use="required"/>
+ </xs:complexType>
+
+ <!-- ===================== Перечисления ===================== -->
+ <xs:simpleType name="StatusEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="draft"/>       <!-- проект, не утверждён -->
+   <xs:enumeration value="effective"/>   <!-- действует -->
+   <xs:enumeration value="superseded"/>  <!-- заменён новой редакцией -->
+   <xs:enumeration value="withdrawn"/>   <!-- отменён -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="ModalityEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="shall"/>      <!-- обязательно: «должен», «следует», «необходимо» -->
+   <xs:enumeration value="should"/>     <!-- рекомендуется, желательно -->
+   <xs:enumeration value="may"/>        <!-- допускается -->
+   <xs:enumeration value="shall-not"/>  <!-- запрещено: «не допускается», «недопустимо» -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="ModalityBasisEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="explicit"/>  <!-- модальный глагол есть в тексте -->
+   <xs:enumeration value="implicit"/>  <!-- изъявительное наклонение / перечень; модальность выведена -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="SourceEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="authoritative"/> <!-- statement совпадает с текстом пункта -->
+   <xs:enumeration value="derived"/>       <!-- statement нормализован из пункта; дословно — в quote -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="ClauseTypeEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="normative"/>   <!-- содержит требования -->
+   <xs:enumeration value="informative"/> <!-- цели, пояснения -->
+   <xs:enumeration value="definition"/>  <!-- определение понятия в тексте -->
+   <xs:enumeration value="scope"/>       <!-- область применения -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="RelationEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="requires"/>
+   <xs:enumeration value="implements"/>
+   <xs:enumeration value="constrainedBy"/>
+   <xs:enumeration value="definedBy"/>
+   <xs:enumeration value="references"/>
+   <xs:enumeration value="supersedes"/>
+   <xs:enumeration value="conflictsWith"/>
+   <xs:enumeration value="clarifies"/>
+   <xs:enumeration value="appliesTo"/>
+   <xs:enumeration value="performedBy"/>
+   <xs:enumeration value="verifiedBy"/>
+   <xs:enumeration value="inputOf"/>
+   <xs:enumeration value="outputOf"/>
+   <xs:enumeration value="partOf"/>
+   <xs:enumeration value="usedBy"/>
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="NoteTypeEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="duplicate"/>
+   <xs:enumeration value="inconsistency"/>
+   <xs:enumeration value="gap"/>
+   <xs:enumeration value="wording"/>
+   <xs:enumeration value="formatting"/>
+   <xs:enumeration value="interpretation"/>
+   <xs:enumeration value="question"/>
+  </xs:restriction>
+ </xs:simpleType>
+
+ <!-- ===================== Метаданные ===================== -->
+ <xs:complexType name="MetadataType"><xs:sequence>
+  <xs:element name="title" type="xs:string"/>
+  <xs:element name="documentType"><xs:complexType mixed="true"><xs:attribute name="code" type="xs:string"/></xs:complexType></xs:element>
+  <xs:element name="organization" type="xs:string" minOccurs="0"/>
+  <xs:element name="processRef"><xs:complexType mixed="true"><xs:attribute name="id" type="xs:string"/></xs:complexType></xs:element>
+  <xs:element name="processPath" type="ProcessPathType" minOccurs="0"/>
+  <xs:element name="processModel" type="ProcessModelType" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="owner" type="PartyType"/>
+  <xs:element name="manager" type="PartyType" minOccurs="0"/>
+  <xs:element name="developer" type="PartyType" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="methodologist" type="PartyType" minOccurs="0"/>
+ </xs:sequence></xs:complexType>
+
+ <xs:complexType name="PartyType" mixed="true">
+  <xs:attribute name="role" type="xs:string"/>
+  <xs:attribute name="person" type="xs:string"/>
+ </xs:complexType>
+
+ <!-- Иерархия процессов от верхнего уровня к processRef -->
+ <xs:complexType name="ProcessPathType"><xs:sequence>
+  <xs:element name="process" maxOccurs="unbounded"><xs:complexType mixed="true"><xs:attribute name="id" type="xs:string" use="required"/></xs:complexType></xs:element>
+ </xs:sequence></xs:complexType>
+
+ <!-- Ссылка на BPMN-модель регулируемого процесса (ИСМ XML = нормативная семантика, BPMN XML = процессная) -->
+ <xs:complexType name="ProcessModelType">
+  <xs:attribute name="notation" type="xs:string" use="required"/>
+  <xs:attribute name="href" type="xs:anyURI" use="required"/>
+  <xs:attribute name="processId" type="xs:string"/>
+ </xs:complexType>
+
+ <!-- ===================== Область применения ===================== -->
+ <xs:complexType name="ScopeType"><xs:sequence>
+  <xs:element name="applicability" type="ApplicabilityType" minOccurs="0"/>
+  <xs:element name="audience" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
+   <xs:attribute name="ref" type="xs:string" use="required"/>
+   <xs:attribute name="clause" type="xs:string"/>
+  </xs:complexType></xs:element>
+ </xs:sequence></xs:complexType>
+
+ <xs:complexType name="ApplicabilityType"><xs:sequence>
+  <xs:element name="condition" maxOccurs="unbounded"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+   <xs:attribute name="clause" type="xs:string"/>
+  </xs:extension></xs:simpleContent></xs:complexType></xs:element>
+ </xs:sequence></xs:complexType>
+
+ <!-- ===================== История изменений ===================== -->
+ <xs:complexType name="ChangeHistoryType"><xs:sequence><xs:element name="change" maxOccurs="unbounded"><xs:complexType><xs:sequence>
+  <xs:element name="basis" type="xs:string" minOccurs="0"/>
+  <xs:element name="description" type="xs:string"/>
+ </xs:sequence>
+  <xs:attribute name="version" type="xs:string" use="required"/>
+  <xs:attribute name="date" type="xs:date"/>
+ </xs:complexType></xs:element></xs:sequence></xs:complexType>
+
+ <!-- ===================== Термины ===================== -->
+ <xs:complexType name="TermsType"><xs:sequence>
+  <xs:element name="note" type="xs:string" minOccurs="0"/>
+  <xs:element name="term" type="TermType" maxOccurs="unbounded"/>
+ </xs:sequence></xs:complexType>
+ <xs:complexType name="TermType"><xs:sequence>
+  <xs:element name="name" type="xs:string"/>
+  <xs:element name="abbreviation" type="xs:string" minOccurs="0"/>
+  <xs:element name="definition" type="xs:string"/>
+  <xs:element name="note" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+ </xs:sequence><xs:attribute name="id" type="xs:ID" use="required"/></xs:complexType>
+
+ <!-- ===================== Реестры Knowledge Layer ===================== -->
+ <xs:complexType name="RolesType"><xs:sequence><xs:element name="role" type="RoleType" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+ <xs:complexType name="RoleType"><xs:sequence>
+  <xs:element name="name" type="xs:string"/>
+  <xs:element name="alias" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="description" type="xs:string" minOccurs="0"/>
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="type" type="xs:string"/>
+ </xs:complexType>
+
+ <xs:complexType name="ObjectsType"><xs:sequence><xs:element name="object" type="ObjectType" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+ <xs:complexType name="ObjectType"><xs:sequence>
+  <xs:element name="name" type="xs:string"/>
+  <xs:element name="alias" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="description" type="xs:string" minOccurs="0"/>
+  <xs:element name="externalCode" minOccurs="0" maxOccurs="unbounded"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+   <xs:attribute name="scheme" type="xs:string" use="required"/>
+  </xs:extension></xs:simpleContent></xs:complexType></xs:element>
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="type" type="xs:string"/>
+ </xs:complexType>
+
+ <!-- ===================== Тело документа ===================== -->
+ <xs:complexType name="BodyType"><xs:sequence><xs:element name="section" type="SectionType" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+
+ <xs:complexType name="SectionType">
+  <xs:choice minOccurs="0" maxOccurs="unbounded">
+   <xs:element name="section" type="SectionType"/>
+   <xs:element name="clause" type="ClauseType"/>
+   <xs:element name="paragraph" type="xs:string"/>
+   <xs:element name="requirement" type="RequirementType"/>
+   <xs:element name="termList" type="EmptyType"/>      <!-- здесь выводится таблица терминов из <terms> -->
+   <xs:element name="referenceList" type="EmptyType"/> <!-- здесь выводится перечень источников из <references> -->
+  </xs:choice>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="number" type="xs:string"/>
+  <xs:attribute name="title" type="xs:string" use="required"/>
+  <xs:attribute name="kind" type="xs:string"/> <!-- appendix -->
+ </xs:complexType>
+
+ <xs:complexType name="EmptyType"/>
+
+ <!-- Пункт документа: дословный текст + атомарные требования + подпункты а), б)… -->
+ <xs:complexType name="ClauseType"><xs:sequence>
+  <xs:element name="text" type="TextType" minOccurs="0"/>
+  <xs:element name="requirement" type="RequirementType" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="clause" type="ClauseType" minOccurs="0" maxOccurs="unbounded"/>
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="number" type="xs:string"/>
+  <xs:attribute name="label" type="xs:string"/>
+  <xs:attribute name="type" type="ClauseTypeEnum" use="required"/>
+ </xs:complexType>
+
+ <xs:complexType name="TextType"><xs:choice maxOccurs="unbounded">
+  <xs:element name="p" type="xs:string"/>
+  <xs:element name="list" type="ListType"/>
+  <xs:element name="table" type="TableType"/>
+  <xs:element name="figure" type="FigureType"/>
+ </xs:choice></xs:complexType>
+
+ <xs:complexType name="ListType"><xs:sequence><xs:element name="item" type="ItemType" maxOccurs="unbounded"/></xs:sequence>
+  <xs:attribute name="style" type="xs:string"/> <!-- dash | bullet -->
+ </xs:complexType>
+ <xs:complexType name="ItemType" mixed="true"><xs:choice minOccurs="0" maxOccurs="unbounded">
+  <xs:element name="p" type="xs:string"/>
+  <xs:element name="list" type="ListType"/>
+  <xs:element name="figure" type="FigureType"/>
+ </xs:choice></xs:complexType>
+
+ <xs:complexType name="TableType"><xs:sequence>
+  <xs:element name="head" type="RowType" minOccurs="0"/>
+  <xs:element name="row" type="RowType" maxOccurs="unbounded"/>
+ </xs:sequence></xs:complexType>
+ <xs:complexType name="RowType"><xs:sequence><xs:element name="cell" type="CellType" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+ <xs:complexType name="CellType" mixed="true"><xs:choice minOccurs="0" maxOccurs="unbounded">
+  <xs:element name="p" type="xs:string"/>
+  <xs:element name="list" type="ListType"/>
+ </xs:choice></xs:complexType>
+
+ <xs:complexType name="FigureType">
+  <xs:attribute name="src" type="xs:anyURI" use="required"/>
+  <xs:attribute name="alt" type="xs:string" use="required"/>
+ </xs:complexType>
+
+ <!-- ===================== Атомарное требование ===================== -->
+ <xs:complexType name="RequirementType"><xs:sequence>
+  <xs:element name="statement" type="xs:string"/>
+  <xs:element name="quote" type="xs:string" minOccurs="0"/>             <!-- дословный фрагмент пункта -->
+  <xs:element name="subject" type="RefType" minOccurs="0"/>             <!-- кто: роль из <roles> -->
+  <xs:element name="action" type="ActionType" minOccurs="0"/>           <!-- что делает -->
+  <xs:element name="object" type="RefType" minOccurs="0" maxOccurs="unbounded"/>      <!-- над чем: объект из <objects> -->
+  <xs:element name="counterpart" type="RefType" minOccurs="0" maxOccurs="unbounded"/> <!-- с кем: роль из <roles> -->
+  <xs:element name="applicability" type="ApplicabilityType" minOccurs="0"/>
+  <xs:element name="verification" type="VerificationType" minOccurs="0"/>
+  <xs:element name="externalReference" type="RefType" minOccurs="0" maxOccurs="unbounded"/>
+  <xs:element name="tags" type="TagsType" minOccurs="0"/>
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="number" type="xs:string"/>
+  <xs:attribute name="modality" type="ModalityEnum" use="required"/>
+  <xs:attribute name="modalityBasis" type="ModalityBasisEnum"/>
+  <xs:attribute name="kind" type="xs:string"/>
+  <xs:attribute name="criticality" type="xs:string"/>
+  <xs:attribute name="source" type="SourceEnum"/>
+ </xs:complexType>
+
+ <xs:complexType name="RefType"><xs:attribute name="ref" type="xs:string" use="required"/></xs:complexType>
+
+ <xs:complexType name="ActionType"><xs:simpleContent><xs:extension base="xs:string">
+  <xs:attribute name="code" type="xs:string" use="required"/>
+ </xs:extension></xs:simpleContent></xs:complexType>
+
+ <xs:complexType name="VerificationType"><xs:sequence>
+  <!-- Машинная проверка: выражение выбирает нарушения; модель соответствует, если результат пуст.
+       В выражениях префикс bpmn = http://www.omg.org/spec/BPMN/20100524/MODEL -->
+  <xs:element name="check" minOccurs="0" maxOccurs="unbounded"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+   <xs:attribute name="language" type="xs:string" use="required"/> <!-- xpath-1.0 -->
+   <xs:attribute name="target" type="xs:string" use="required"/>   <!-- bpmn-2.0 -->
+   <xs:attribute name="status" type="xs:string"/>                  <!-- proposed | approved -->
+  </xs:extension></xs:simpleContent></xs:complexType></xs:element>
+ </xs:sequence>
+  <xs:attribute name="method" type="xs:string" use="required"/>
+ </xs:complexType>
+
+ <xs:complexType name="TagsType"><xs:sequence><xs:element name="tag" type="xs:string" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+
+ <!-- ===================== Нормативные ссылки ===================== -->
+ <xs:complexType name="ReferencesType"><xs:sequence>
+  <xs:element name="note" type="xs:string" minOccurs="0"/>
+  <xs:element name="reference" type="ReferenceType" maxOccurs="unbounded"/>
+ </xs:sequence></xs:complexType>
+ <xs:complexType name="ReferenceType"><xs:sequence>
+  <xs:element name="identifier" type="xs:string"/>
+  <xs:element name="title" type="xs:string"/>
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="type" type="xs:string"/>
+  <!-- source: есть в перечне нормативных ссылок документа; derived: используется в тексте, но в перечне отсутствует -->
+  <xs:attribute name="origin" type="xs:string" default="source"/>
+ </xs:complexType>
+
+ <!-- ===================== Семантические связи ===================== -->
+ <xs:complexType name="SemanticLinksType"><xs:sequence><xs:element name="link" maxOccurs="unbounded"><xs:complexType>
+  <xs:attribute name="from" type="xs:string" use="required"/>
+  <xs:attribute name="to" type="xs:string" use="required"/>
+  <xs:attribute name="relation" type="RelationEnum" use="required"/>
+  <xs:attribute name="clause" type="xs:string"/> <!-- пункт-основание связи -->
+ </xs:complexType></xs:element></xs:sequence></xs:complexType>
+
+ <!-- ===================== Замечания к исходному документу ===================== -->
+ <xs:complexType name="EditorialNotesType"><xs:sequence><xs:element name="note" maxOccurs="unbounded"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+  <xs:attribute name="id" type="xs:ID" use="required"/>
+  <xs:attribute name="type" type="NoteTypeEnum" use="required"/>
+  <xs:attribute name="target" type="xs:string"/>
+ </xs:extension></xs:simpleContent></xs:complexType></xs:element></xs:sequence></xs:complexType>
+
+</xs:schema>

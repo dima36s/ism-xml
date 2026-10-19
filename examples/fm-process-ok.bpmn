@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Пример для вкладки «Проверка ФМ»: схема согласования ФМ без нарушений п. 4.2.2. Без диаграммы (BPMN DI). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Defs_FM_OK" targetNamespace="urn:example:fm">
+  <bpmn:collaboration id="Collab_FM">
+    <bpmn:participant id="Pool_Enterprise" name="Предприятие" processRef="Process_FM"/>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_FM" name="Разработка и утверждение ФМ" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_FM">
+      <bpmn:lane id="Lane_Digital" name="Подразделение цифровизации">
+        <bpmn:flowNodeRef>Start_New</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Describe</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Scheme</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gw_Remarks</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Owner" name="Владелец модуля">
+        <bpmn:flowNodeRef>Task_Agree</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_FC" name="Функциональный заказчик">
+        <bpmn:flowNodeRef>Task_Approve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Approved</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_New" name="Новый функционал введен"/>
+    <bpmn:userTask id="Task_Describe" name="Описать текстовую часть ФМ"/>
+    <bpmn:userTask id="Task_Scheme" name="Актуализировать схему процесса"/>
+    <bpmn:userTask id="Task_Agree" name="Согласовать ФМ"/>
+    <bpmn:exclusiveGateway id="Gw_Remarks" name="Есть замечания?"/>
+    <bpmn:userTask id="Task_Approve" name="Утвердить ФМ"/>
+    <bpmn:endEvent id="End_Approved" name="ФМ утверждена"/>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start_New" targetRef="Task_Describe"/>
+    <bpmn:sequenceFlow id="F2" sourceRef="Task_Describe" targetRef="Task_Scheme"/>
+    <bpmn:sequenceFlow id="F3" sourceRef="Task_Scheme" targetRef="Task_Agree"/>
+    <bpmn:sequenceFlow id="F4" sourceRef="Task_Agree" targetRef="Gw_Remarks"/>
+    <bpmn:sequenceFlow id="F5" name="да" sourceRef="Gw_Remarks" targetRef="Task_Describe"/>
+    <bpmn:sequenceFlow id="F6" name="нет" sourceRef="Gw_Remarks" targetRef="Task_Approve"/>
+    <bpmn:sequenceFlow id="F7" sourceRef="Task_Approve" targetRef="End_Approved"/>
+  </bpmn:process>
+</bpmn:definitions>
