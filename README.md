@@ -89,13 +89,13 @@
 1. Создайте проект на supabase.com.
 2. **SQL Editor** → вставьте `supabase/setup.sql` целиком → **Run**. Скрипт можно запускать повторно.
 3. **Authentication → Sign In / Providers → Email**: провайдер Email включён, **Confirm email** включено, **Email OTP Length** — 6, минимальная длина пароля — 8.
-4. **Authentication → Emails → Templates**:
+4. **Authentication → Emails → Templates** (редактировать шаблоны Supabase разрешает только после подключения своего SMTP, шаг 5; до этого письма уходят со стандартным текстом и ссылкой — приложение принимает и ссылку, вход выполняется по переходу):
    - *Confirm signup* — тема «Код подтверждения ИСМ XML», текст из `supabase/email-templates/confirm-signup.html`;
    - *Reset password* — тема «Код для смены пароля ИСМ XML», текст из `supabase/email-templates/reset-password.html`.
 
    В шаблонах должен быть `{{ .Token }}` — это шестизначный код, который пользователь вводит в приложении.
 5. **Authentication → Emails → SMTP Settings** → включите свой SMTP. Без него Supabase отправляет письма только адресам участников команды проекта и не чаще двух в час; со своим SMTP — на любые адреса. Пример для Яндекс Почты: сервер `smtp.yandex.ru`, порт 465, логин — полный адрес ящика, пароль — пароль приложения (Яндекс ID → Безопасность → Пароли приложений), отправитель — тот же адрес. Для Mail.ru — `smtp.mail.ru`, порт 465, тоже с паролем приложения. Лимит писем в час настраивается в **Authentication → Rate Limits**.
-6. **Authentication → URL Configuration**: Site URL — адрес приложения, например `https://dima36s.github.io/ism-xml/`.
+6. **Authentication → URL Configuration**: Site URL — адрес приложения, например `https://dima36s.github.io/ism-xml/`; в Redirect URLs добавьте `https://dima36s.github.io/ism-xml/**`. Сюда ведут ссылки из писем.
 7. **Project Settings → API Keys**: скопируйте Project URL и ключ publishable (`sb_publishable_…`, в старых проектах — `anon`) в `assets/config.js` и сохраните в репозиторий. Этот ключ публичный по замыслу Supabase — доступ ограничивают политики из `setup.sql`. Секретный ключ (`sb_secret_…`, `service_role`) и пароль базы данных в приложение класть нельзя.
 
 После этого приложение открывается экраном входа: регистрация → код из письма → вход. Документы, загруженные в браузере до входа, приложение предложит перенести в личный кабинет.

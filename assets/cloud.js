@@ -9,6 +9,12 @@
   const SDK = 'assets/vendor/supabase.js'; // supabase-js 2.117.2, MIT; ключ sb_publishable_ передаётся только в заголовке apikey
   let sb = null;
   let uid = null;
+  // Возврат по ссылке из письма: Supabase дописывает к адресу #access_token=…&type=signup|recovery или #error=…
+  const APP_URL = location.origin + location.pathname;
+  const hashParams = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  const urlEvent = hashParams.has('access_token') ? (hashParams.get('type') || 'signin')
+    : hashParams.has('error') || hashParams.has('error_description') ? 'error' : '';
+  const urlError = urlEvent === 'error' ? (hashParams.get('error_code') || hashParams.get('error_description') || hashParams.get('error')) : '';
 
   function loadScript(src) {
     return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('не удалось загрузить ' + src)); document.head.appendChild(s); });
@@ -17,7 +23,7 @@
     if (sb) return sb;
     if (!window.supabase) await loadScript(SDK);
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'ism-xml-auth' },
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !!urlEvent, flowType: 'implicit', storageKey: 'ism-xml-auth' },
     });
     return sb;
   }
@@ -29,6 +35,7 @@
     const map = [
       [/invalid login credentials/i, 'Неверная почта или пароль.'],
       [/email not confirmed/i, 'Почта ещё не подтверждена. Введите код из письма или запросите новый.'],
+      [/otp_expired|link is invalid or has expired/i, 'Ссылка из письма устарела или уже использована. Войдите паролем или запросите новое письмо.'],
       [/token has expired|otp.*(expired|invalid)|invalid.*(otp|token)/i, 'Код неверный или устарел. Запросите новый код.'],
       [/user already registered|already been registered/i, 'Эта почта уже зарегистрирована. Войдите или восстановите пароль.'],
       [/email address not authorized/i, 'Сервер не может отправить письмо на этот адрес: в Supabase не подключён свой почтовый сервер (SMTP). Без него письма получают только участники команды проекта.'],
@@ -60,7 +67,7 @@
     },
     async signUp(email, password) {
       const c = await client();
-      const data = check(await c.auth.signUp({ email, password }));
+      const data = check(await c.auth.signUp({ email, password, options: { emailRedirectTo: APP_URL } }));
       // Для уже подтверждённой почты Supabase возвращает пользователя без identities и письмо не шлёт
       if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
         throw new Error('Эта почта уже зарегистрирована. Войдите или восстановите пароль.');
@@ -78,7 +85,7 @@
     },
     async resend(email) {
       const c = await client();
-      check(await c.auth.resend({ type: 'signup', email }));
+      check(await c.auth.resend({ type: 'signup', email, options: { emailRedirectTo: APP_URL } }));
     },
     async signIn(email, password) {
       const c = await client();
@@ -94,7 +101,7 @@
     },
     async requestReset(email) {
       const c = await client();
-      check(await c.auth.resetPasswordForEmail(email));
+      check(await c.auth.resetPasswordForEmail(email, { redirectTo: APP_URL }));
     },
     async verifyReset(email, code) {
       const c = await client();
@@ -202,5 +209,5 @@
   };
 
   window.ISM = window.ISM || {};
-  window.ISM.cloud = { enabled, auth, store, host: enabled ? cfg.supabaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '' };
+  window.ISM.cloud = { enabled, auth, store, urlEvent, urlError, ru, host: enabled ? cfg.supabaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '' };
 })();
