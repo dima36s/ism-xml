@@ -6,7 +6,7 @@
   'use strict';
   const cfg = window.ISM_CONFIG || {};
   const enabled = !!(cfg.supabaseUrl && cfg.supabaseAnonKey);
-  const SDK = 'assets/vendor/supabase.js'; // supabase-js 2.45.4, MIT
+  const SDK = 'assets/vendor/supabase.js'; // supabase-js 2.117.2, MIT; ключ sb_publishable_ передаётся только в заголовке apikey
   let sb = null;
   let uid = null;
 
@@ -24,7 +24,7 @@
 
   // Сообщения Supabase Auth — на русском
   function ru(error) {
-    const msg = String((error && (error.message || error.error_description)) || error || '');
+    const msg = String((error && (error.message || error.error_description)) || error || '') + (error && error.code ? ` ${error.code}` : '');
     const sec = msg.match(/after (\d+) seconds?/i);
     const map = [
       [/invalid login credentials/i, 'Неверная почта или пароль.'],
@@ -40,6 +40,7 @@
       [/same.*password|new password should be different/i, 'Новый пароль совпадает со старым.'],
       [/reauthenticat/i, 'Для смены пароля нужно заново войти в приложение.'],
       [/failed to fetch|network/i, 'Нет связи с сервером базы данных. Проверьте интернет.'],
+      [/could not find the (table|function)|schema cache|relation .* does not exist|function .* does not exist|PGRST20[25]/i, 'База данных проекта ещё не настроена: выполните supabase/setup.sql в SQL Editor Supabase.'],
       [/jwt|not authenticated|нужно войти/i, 'Сеанс истёк. Войдите снова.'],
     ];
     if (sec) return `Повторно запросить код можно через ${sec[1]} с.`;

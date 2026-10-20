@@ -96,7 +96,7 @@
    В шаблонах должен быть `{{ .Token }}` — это шестизначный код, который пользователь вводит в приложении.
 5. **Authentication → Emails → SMTP Settings** → включите свой SMTP. Без него Supabase отправляет письма только адресам участников команды проекта и не чаще двух в час; со своим SMTP — на любые адреса. Пример для Яндекс Почты: сервер `smtp.yandex.ru`, порт 465, логин — полный адрес ящика, пароль — пароль приложения (Яндекс ID → Безопасность → Пароли приложений), отправитель — тот же адрес. Для Mail.ru — `smtp.mail.ru`, порт 465, тоже с паролем приложения. Лимит писем в час настраивается в **Authentication → Rate Limits**.
 6. **Authentication → URL Configuration**: Site URL — адрес приложения, например `https://dima36s.github.io/ism-xml/`.
-7. **Project Settings → API**: скопируйте Project URL и ключ `anon` в `assets/config.js` и сохраните в репозиторий. Ключ `anon` публичный по замыслу Supabase — доступ ограничивают политики из `setup.sql`. Ключ `service_role` в приложение класть нельзя.
+7. **Project Settings → API Keys**: скопируйте Project URL и ключ publishable (`sb_publishable_…`, в старых проектах — `anon`) в `assets/config.js` и сохраните в репозиторий. Этот ключ публичный по замыслу Supabase — доступ ограничивают политики из `setup.sql`. Секретный ключ (`sb_secret_…`, `service_role`) и пароль базы данных в приложение класть нельзя.
 
 После этого приложение открывается экраном входа: регистрация → код из письма → вход. Документы, загруженные в браузере до входа, приложение предложит перенести в личный кабинет.
 
@@ -145,4 +145,4 @@ tools/validate.py          проверка XML перед публикацие�
 
 ## Лицензии сторонних компонентов
 
-Шрифт Golos Text — SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). JSZip 3.10.1 — MIT (`assets/vendor/jszip-LICENSE.md`). ExcelJS 4.4.0 — MIT (`assets/vendor/exceljs-LICENSE.txt`). pdf.js 3.11.174 — Apache License 2.0 (`assets/vendor/pdfjs-LICENSE.txt`). supabase-js 2.45.4 — MIT (`assets/vendor/supabase-LICENSE.txt`).
+Шрифт Golos Text — SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). JSZip 3.10.1 — MIT (`assets/vendor/jszip-LICENSE.md`). ExcelJS 4.4.0 — MIT (`assets/vendor/exceljs-LICENSE.txt`). pdf.js 3.11.174 — Apache License 2.0 (`assets/vendor/pdfjs-LICENSE.txt`). supabase-js 2.117.2 — MIT (`assets/vendor/supabase-LICENSE.txt`).
