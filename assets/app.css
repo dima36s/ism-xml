@@ -851,6 +851,25 @@ body.auth-mode .topbar, body.auth-mode .layout, body.auth-mode .banner, body.aut
 .lg-line.sug { border-top: 2px dashed var(--accent); } .lg-line.ov { border-top: 2px dotted var(--warn); } .lg-line.ref { border-top: 1px solid var(--rule); }
 .g-table td { font-size: 14px; } .g-table td div { margin-top: 3px; color: var(--ink-2); }
 
+/* Граф: вид «Сеть» */
+.nedge { stroke: var(--rule); stroke-width: 1.2; opacity: .9; }
+.nedge.dim { opacity: .12; }
+.nsec circle { fill: var(--paper); stroke: var(--ink-3); stroke-width: 1.4; cursor: grab; }
+.nsec text { font: 600 10.5px var(--mono); fill: var(--ink-3); }
+.nsec.dim { opacity: .2; }
+circle.gnode { stroke: var(--sheet); stroke-width: .8; }
+circle.gnode.linked { stroke: var(--ink); stroke-width: 1.8; }
+circle.gnode.on { stroke: var(--warn); stroke-width: 3; }
+.ndoc circle { fill: var(--sheet); stroke: var(--accent); stroke-width: 2.5; }
+.ndoc:hover circle, .ndoc.on circle { stroke: var(--warn); stroke-width: 3.5; }
+.ndoc.excluded circle { stroke-dasharray: 5 3; }
+.ndoc.dim { opacity: .25; }
+.ndoc-type { font: 700 11.5px var(--mono); fill: var(--accent-ink); text-anchor: middle; }
+.ndoc-id, .ndoc-title { text-anchor: middle; paint-order: stroke; stroke-linejoin: round; }
+#graphSvg .ndoc-id, #graphSvg .ndoc-title { stroke: var(--sheet); stroke-width: 4px; }
+.ndoc-id { font: 650 13px var(--mono); fill: var(--ink); }
+.ndoc-title { font: 400 12px var(--font); fill: var(--ink-2); }
+
 /* Перетаскивание файлов на страницу */
 .drop-hint { position: fixed; inset: 0; z-index: 70; display: none; place-items: center; pointer-events: none; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 3px dashed var(--accent); }
 .drop-hint div { background: var(--sheet); padding: 14px 22px; font-weight: 600; box-shadow: var(--shadow); border-radius: var(--radius); }

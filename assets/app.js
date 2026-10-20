@@ -1322,7 +1322,7 @@
   // Полосы как в классификаторе документов ИСМ: 1–4 уровень и внешняя документация.
   // Узлы — требования внутри документов; рёбра — основания (нижестоящее требование выведено из вышестоящего),
   // предложенные основания по сходству формулировок, пересечения и ссылки между документами.
-  const G = { vb: null, size: null, sel: '', drag: null, f: { cat: 'all', basis: true, sug: true, ov: false, refs: true, onlyInc: false } };
+  const G = { vb: null, size: null, sel: '', drag: null, f: { mode: 'network', cat: 'all', basis: true, sug: true, ov: false, refs: true, onlyInc: false } };
   const GL = { label: 214, pad: 18, docW: 268, gapX: 22, gapY: 18, head: 66, node: 13, ngap: 5, cols: 13, maxNodes: 156, bandPad: 16 };
   const levelKey = (m) => (!m || !m.type ? 'none' : m.type.level ?? 'ext');
   const above = (up, low) => { // up выше low по иерархии
@@ -1388,12 +1388,187 @@
     return { bands, pos, docs, W: contentW + GL.pad, H: y, ms };
   }
 
+  /* ---------- Граф: вид «Сеть» ---------- */
+  // Документы — крупные узлы на высоте своего уровня иерархии, разделы — средние, требования — точки вокруг разделов.
+  // Раскладка силовая (отталкивание, пружины, притяжение к полосе уровня), считается один раз и кэшируется.
+  const NET = { bandOcc: 400, bandEmpty: 76, left: 230, width: 1180 };
+  function seeded(seed) { let s = seed >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+  function netLayout() {
+    // Раскладка зависит только от состава документов: новые связи и перетаскивание её не сбрасывают
+    const key = W.docs.map((d) => `${d.key}:${(d.xml || '').length}:${G.f.onlyInc ? d.included : ''}`).join('|');
+    if (G.net && G.net.key === key) return G.net;
+    const ms = models().filter((m) => !G.f.onlyInc || m.entry.included);
+    const ks = [1, 2, 3, 4, 'ext'];
+    if (ms.some((m) => levelKey(m) === 'none')) ks.push('none');
+    let y = 0;
+    const bands = ks.map((k) => { const docs = ms.filter((m) => levelKey(m) === k); const b = { k, docs, y, h: docs.length ? NET.bandOcc : NET.bandEmpty }; y += b.h; return b; });
+    const nodes = [], links = [], byId = new Map();
+    const rnd = seeded(20261021);
+    const add = (n) => { n.vx = 0; n.vy = 0; nodes.push(n); byId.set(n.id, n); return n; };
+    bands.forEach((b) => {
+      const cy = b.y + b.h / 2;
+      b.docs.forEach((m, i) => {
+        const x0 = NET.left + ((i + 1) / (b.docs.length + 1)) * NET.width;
+        const dn = add({ id: 'doc:' + m.key, kind: 'doc', m, x: x0, y: cy, ax: x0, band: b, r: 30, q: 1300 });
+        const groups = new Map();
+        m.reqs.forEach((r) => { const s = topSection(r.section); const k = s && s.id ? s.id : '_'; if (!groups.has(k)) groups.set(k, { s, reqs: [] }); groups.get(k).reqs.push(r); });
+        const gl = [...groups.values()];
+        gl.forEach((g, j) => {
+          const ang = (j / Math.max(1, gl.length)) * Math.PI * 2 + rnd() * 0.5;
+          let parent = dn;
+          if (gl.length > 1) {
+            parent = add({ id: `sec:${m.key}:${g.s && g.s.id ? g.s.id : '_'}`, kind: 'sec', m, s: g.s, x: x0 + Math.cos(ang) * 105, y: cy + Math.sin(ang) * 80, band: b, r: 9, q: 260 });
+            links.push({ a: dn, b: parent, len: 85 + Math.min(70, g.reqs.length * 4), k: 0.3, kind: 'struct' });
+          }
+          g.reqs.forEach((r) => {
+            const a2 = rnd() * Math.PI * 2;
+            const rn = add({ id: uk(r), kind: 'req', req: r, m, x: parent.x + Math.cos(a2) * 34, y: parent.y + Math.sin(a2) * 34, band: b, r: 7, q: 60 });
+            links.push({ a: parent, b: rn, len: parent.kind === 'doc' ? 66 : 36, k: 0.4, kind: 'struct' });
+          });
+        });
+      });
+    });
+    simulate(nodes, links);
+    // Полосы ужимаются по фактическому размеру кластеров, подписи уровней — слева от содержимого
+    let cur = 0;
+    bands.forEach((b) => {
+      const ns = nodes.filter((nd) => nd.band === b);
+      if (!ns.length) { b.y = cur; b.h = 64; cur += b.h; return; }
+      const minY = Math.min(...ns.map((nd) => nd.y - nd.r));
+      const maxY = Math.max(...ns.map((nd) => nd.y + nd.r + (nd.kind === 'doc' ? 40 : 0)));
+      const h = Math.max(190, maxY - minY + 70);
+      const shift = cur + (h - (maxY - minY)) / 2 - minY;
+      ns.forEach((nd) => { nd.y += shift; });
+      b.y = cur; b.h = h; cur += h;
+    });
+    const xs = nodes.flatMap((nd) => (nd.kind === 'doc' ? [nd.x - 120, nd.x + 120] : [nd.x - nd.r, nd.x + nd.r]));
+    const minX = xs.length ? Math.min(...xs) : NET.left, maxX = xs.length ? Math.max(...xs) : NET.left + 400;
+    const labelX = minX - 250;
+    G.net = { key, nodes, links, byId, bands, H: cur, x0: labelX - 16, W: maxX + 30 - (labelX - 16), labelX };
+    return G.net;
+  }
+  function simulate(nodes, links) {
+    const n = nodes.length;
+    const iters = n < 160 ? 340 : n < 450 ? 230 : 130;
+    const cx = NET.left + NET.width / 2;
+    for (let it = 0; it < iters; it++) {
+      const alpha = 1 - it / iters;
+      for (let i = 0; i < n; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < n; j++) {
+          const c = nodes[j];
+          let dx = c.x - a.x, dy = c.y - a.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 > 90000) continue;
+          if (d2 < 0.01) { dx = (i % 2 ? 1 : -1) * 0.5; dy = 0.3; d2 = 0.34; }
+          const d = Math.sqrt(d2);
+          const f = (Math.sqrt(a.q * c.q) * alpha) / d2;
+          a.vx -= dx * f; a.vy -= dy * f; c.vx += dx * f; c.vy += dy * f;
+          const min = a.r + c.r + 3;
+          if (d < min) { const p = ((min - d) / d) * 0.5; a.x -= dx * p; a.y -= dy * p; c.x += dx * p; c.y += dy * p; }
+        }
+      }
+      links.forEach((l) => {
+        const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const p = ((d - l.len) / d) * l.k * alpha;
+        l.a.vx += dx * p; l.a.vy += dy * p; l.b.vx -= dx * p; l.b.vy -= dy * p;
+      });
+      nodes.forEach((nd) => {
+        const cy = nd.band.y + nd.band.h / 2;
+        nd.vy += (cy - nd.y) * (nd.kind === 'doc' ? 0.25 : 0.035) * alpha;
+        if (nd.kind === 'doc') nd.vx += (nd.ax - nd.x) * 0.12 * alpha;
+        nd.vx += (cx - nd.x) * 0.002 * alpha;
+        nd.vx *= 0.58; nd.vy *= 0.58;
+        nd.x += nd.vx; nd.y += nd.vy;
+        const top = nd.band.y + 24, bot = nd.band.y + nd.band.h - 24;
+        nd.y = Math.min(bot, Math.max(top, nd.y));
+        nd.x = Math.min(NET.left + NET.width + 40, Math.max(NET.left - 10, nd.x));
+      });
+    }
+  }
+  function graphChain(sel) {
+    const set = new Set();
+    if (!sel || sel.startsWith('doc:')) return set;
+    const walk = (k, dir) => W.links.filter((l) => l.relation === 'derives' && (dir === 'up' ? l.from === k : l.to === k)).forEach((l) => { const nk = dir === 'up' ? l.to : l.from; if (!set.has(nk)) { set.add(nk); walk(nk, dir); } });
+    set.add(sel); walk(sel, 'up'); walk(sel, 'down');
+    return set;
+  }
+  function renderNetwork(keepView) {
+    const svg = $('#graphSvg');
+    const N = netLayout();
+    const f = G.f, sel = G.sel;
+    const chain = graphChain(sel);
+    const selDoc = sel.startsWith('doc:') ? sel.slice(4) : '';
+    const t = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+    const curve = (a, b, cls, title, data = '') => {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const bend = Math.abs(a.y - b.y) < 30 ? -60 : 0;
+      return `<path class="edge ${cls}" d="M${a.x.toFixed(1)} ${a.y.toFixed(1)} Q${(mx + bend * 0.3).toFixed(1)} ${(my + bend).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}"${data}><title>${esc(title)}</title></path>`;
+    };
+    let g = '';
+    N.bands.forEach((b, i) => {
+      const name = b.k === 'ext' ? 'Внешняя документация' : b.k === 'none' ? 'Вид не задан' : `${b.k} уровень`;
+      const sub = b.k === 'ext' ? 'законы, ГОСТы, СНиПы, ТУ' : b.k === 'none' ? 'выберите вид документа на главной' : levelInfo(b.k).purpose;
+      const codes = typeList().filter((x) => (b.k === 'ext' ? x.level === null : x.level === b.k)).map((x) => x.code).join(' · ');
+      const LX = N.labelX;
+      g += `<g class="band${i % 2 ? ' alt' : ''}"><rect x="${N.x0 - 4000}" y="${b.y}" width="${N.W + 9000}" height="${b.h}"/><line x1="${N.x0 - 4000}" y1="${b.y + b.h}" x2="${N.x0 + N.W + 5000}" y2="${b.y + b.h}"/>`;
+      g += `<line class="band-sep" x1="${LX + 226}" y1="${b.y}" x2="${LX + 226}" y2="${b.y + b.h}"/>`;
+      g += `<text class="band-n" x="${LX}" y="${b.y + (b.docs.length ? 34 : 30)}">${esc(name)}</text>`;
+      if (b.docs.length) {
+        const words = sub.split(' '); const lines = ['']; words.forEach((w) => { if ((lines[lines.length - 1] + ' ' + w).trim().length > 26 && lines.length < 3) lines.push(w); else lines[lines.length - 1] = (lines[lines.length - 1] + ' ' + w).trim(); });
+        lines.forEach((l, j) => { g += `<text class="band-sub" x="${LX}" y="${b.y + 54 + j * 16}">${esc(l)}</text>`; });
+        if (codes) g += `<text class="band-codes" x="${LX}" y="${b.y + 62 + lines.length * 16}">${esc(t(codes, 30))}</text>`;
+      } else {
+        g += `<text class="band-sub" x="${LX}" y="${b.y + 48}">${esc(t(sub, 30))}</text><text class="band-empty" x="${LX + 246}" y="${b.y + b.h / 2 + 5}">документов этого уровня нет</text>`;
+      }
+      g += '</g>';
+    });
+    let e = '';
+    N.links.filter((l) => l.kind === 'struct').forEach((l) => {
+      const dim = (selDoc && l.a.m.key !== selDoc) || (chain.size && !(l.b.kind === 'req' && chain.has(l.b.id)));
+      e += `<line class="nedge${dim && (selDoc || chain.size) ? ' dim' : ''}" x1="${l.a.x.toFixed(1)}" y1="${l.a.y.toFixed(1)}" x2="${l.b.x.toFixed(1)}" y2="${l.b.y.toFixed(1)}"/>`;
+    });
+    const at = (id) => N.byId.get(id);
+    if (f.refs) docRefEdges(N.nodes.filter((x) => x.kind === 'doc').map((x) => x.m)).forEach((r) => { const a = at('doc:' + r.from.key), b = at('doc:' + r.to.key); if (a && b) e += curve(a, b, 'ref', `${docName(r.from)} ссылается на ${docName(r.to)}`); });
+    if (f.ov) overlapPairs().forEach((p) => { const a = at(p.ka), b = at(p.kb); if (a && b) e += curve(a, b, `ov ${p.kind}${sel && !(p.ka === sel || p.kb === sel) ? ' dim' : ''}`, `${L.ovKind[p.kind]}: ${Math.round(p.score * 100)} %`); });
+    if (f.sug) graphSuggestions().forEach((s) => { const a = at(s.from), b = at(s.to); if (a && b) e += curve(a, b, `sug${sel && !(s.from === sel || s.to === sel) ? ' dim' : ''}`, `Предложено основание (сходство ${Math.round(s.score * 100)} %)`, ` data-sug="${esc(s.from)}>${esc(s.to)}"`); });
+    if (f.basis) W.links.forEach((l) => { const a = at(l.from), b = at(l.to); if (a && b) e += curve(a, b, `basis${chain.size ? (chain.has(l.from) && chain.has(l.to) ? ' hot' : ' dim') : ''}`, 'Основание: требование выведено из вышестоящего'); });
+    g += `<g class="edges">${e}</g>`;
+    N.nodes.filter((x) => x.kind === 'sec').forEach((s) => {
+      const dim = selDoc ? s.m.key !== selDoc : chain.size > 0;
+      const num = s.s ? (s.s.skind === 'appendix' ? 'Пр' : s.s.number || '') : '';
+      g += `<g class="nsec${dim ? ' dim' : ''}"><circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.r}" data-gnet="${esc(s.id)}"><title>${esc(s.s ? `${s.s.number ? s.s.number + '. ' : ''}${s.s.title}` : 'Без раздела')}</title></circle>${num ? `<text x="${(s.x + 9).toFixed(1)}" y="${(s.y - 7).toFixed(1)}">${esc(num)}</text>` : ''}</g>`;
+    });
+    N.nodes.filter((x) => x.kind === 'req').forEach((n) => {
+      const r = n.req;
+      const k = n.id;
+      const dim = (f.cat !== 'all' && r.category !== f.cat) || (chain.size && !chain.has(k)) || (selDoc && n.m.key !== selDoc);
+      const linked = W.links.some((l) => l.from === k);
+      g += `<circle class="gnode ${r.category}${dim ? ' dim' : ''}${k === sel ? ' on' : ''}${linked ? ' linked' : ''}" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${k === sel ? 8 : n.r}" data-guk="${esc(k)}" data-gnet="${esc(k)}"><title>${esc(`${docName(r.m)}, ${reqCite(r)} · ${CAT[r.category]}\n${r.statement}`)}</title></circle>`;
+    });
+    N.nodes.filter((x) => x.kind === 'doc').forEach((d) => {
+      const m = d.m;
+      const code = m.typeCode || '—';
+      g += `<g class="gdoc ndoc${m.entry.included ? '' : ' excluded'}${selDoc === m.key ? ' on' : ''}${chain.size && ![...chain].some((k) => k.startsWith(m.key + '|')) ? ' dim' : ''}" data-gdoc="${esc(m.key)}" data-gnet="doc:${esc(m.key)}">
+        <circle cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="${d.r}"/>
+        <text class="ndoc-type" x="${d.x.toFixed(1)}" y="${(d.y + 4).toFixed(1)}">${esc(code)}</text>
+        <text class="ndoc-id" x="${d.x.toFixed(1)}" y="${(d.y + d.r + 16).toFixed(1)}">${esc(t(docName(m), 24))}</text>
+        <text class="ndoc-title" x="${d.x.toFixed(1)}" y="${(d.y + d.r + 31).toFixed(1)}">${esc(t(docTitle(m), 34))}</text>
+        <title>${esc(`${m.type ? m.type.name : 'Вид не задан'} ${docName(m)} — ${docTitle(m)}. Требований: ${m.reqs.length}`)}</title></g>`;
+    });
+    svg.innerHTML = `<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arr"/></marker></defs>${g}`;
+    G.size = { w: N.W, h: N.H };
+    if (!keepView || !G.vb) graphFit(); else setVB(G.vb);
+  }
+
   function viewGraph() {
     const f = G.f;
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-gf="${key}" data-v="${v}" aria-pressed="${f[key] === v}">${t}</button>`).join('')}</div>`;
     const tog = (key, label, cls) => `<label class="g-tog ${cls}"><input type="checkbox" data-gt="${key}"${f[key] ? ' checked' : ''}><i aria-hidden="true"></i>${label}</label>`;
-    let h = `<div class="page-head"><div><h1>Граф требований</h1><p>Документы разложены по уровням иерархии ИСМ — от политик до записей и внешней документации. Квадратики — требования: фиолетовые бизнес, бирюзовые системные. Линии показывают, из какого требования вышестоящего документа выведено требование нижестоящего.</p></div></div>`;
+    let h = `<div class="page-head"><div><h1>Граф требований</h1><p>Документы стоят на высоте своего уровня иерархии ИСМ — от политик до записей и внешней документации. ${f.mode === 'network' ? 'Крупные узлы — документы, средние — разделы, точки — требования' : 'Квадратики — требования'}: фиолетовые бизнес, бирюзовые системные. Стрелки показывают, из какого требования вышестоящего документа выведено требование нижестоящего.</p></div></div>`;
     h += `<div class="filters g-filters"><div class="f-row">
+        <div class="f-group"><span class="f-label">Вид</span>${seg('mode', [['network', 'сеть'], ['levels', 'таблица уровней']])}</div>
         <div class="f-group"><span class="f-label">Требования</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
         ${tog('basis', 'основания', 'basis')}${tog('sug', 'предложенные по сходству', 'sug')}${tog('ov', 'пересечения', 'ov')}${tog('refs', 'ссылки между документами', 'refs')}
         <label class="f-group chk"><input type="checkbox" data-gt="onlyInc"${f.onlyInc ? ' checked' : ''}> только общий реестр</label>
@@ -1407,6 +1582,13 @@
   function renderGraph(keepView) {
     const svg = $('#graphSvg');
     if (!svg) return;
+    if (G.f.mode === 'network') {
+      G.layout = graphLayout();
+      renderNetwork(keepView);
+      renderGraphPanel();
+      renderGraphList();
+      return;
+    }
     const L0 = graphLayout();
     G.layout = L0;
     const f = G.f;
@@ -1489,8 +1671,14 @@
   function graphFit() {
     const wrap = $('#graphWrap');
     if (!wrap || !G.size) return;
-    // По ширине: весь граф виден целиком, но не крупнее натурального размера; по высоте — прокрутка колесом
     const ratio = wrap.clientHeight / Math.max(1, wrap.clientWidth);
+    if (G.f.mode === 'network' && G.net) { // по ширине содержимого, не крупнее 125 %; по высоте — прокрутка
+      const W0 = G.net.W;
+      const w = Math.max(W0, wrap.clientWidth / 1.25);
+      setVB({ x: G.net.x0 - (w - W0) / 2, y: 0, w, h: w * ratio });
+      return;
+    }
+    // По ширине: весь граф виден целиком, но не крупнее натурального размера; по высоте — прокрутка колесом
     const w = Math.max(wrap.clientWidth, Math.min(G.size.w, wrap.clientWidth / 0.6)); // на телефоне не мельче 60 %, остальное — перетаскиванием
     setVB({ x: 0, y: 0, w, h: w * ratio });
   }
@@ -1572,13 +1760,25 @@
       const k = G.vb.w / svg.getBoundingClientRect().width;
       setVB({ ...G.vb, x: G.vb.x + ev.deltaX * k, y: G.vb.y + ev.deltaY * k });
     }, { passive: false });
-    svg.addEventListener('pointerdown', (ev) => { G.drag = { x: ev.clientX, y: ev.clientY, vb: { ...G.vb }, moved: false }; });
+    svg.addEventListener('pointerdown', (ev) => {
+      const hit = G.f.mode === 'network' && G.net && ev.target.closest && ev.target.closest('[data-gnet]');
+      const node = hit ? G.net.byId.get(hit.dataset.gnet) : null;
+      // документ тянет за собой свои разделы и требования
+      const group = node ? (node.kind === 'doc' ? G.net.nodes.filter((x) => x.m === node.m) : [node]).map((x) => ({ n: x, x: x.x, y: x.y })) : null;
+      G.drag = { x: ev.clientX, y: ev.clientY, vb: { ...G.vb }, moved: false, group };
+    });
+    let raf = 0;
     svg.addEventListener('pointermove', (ev) => {
       const d = G.drag; if (!d) return;
       const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
       if (!d.moved && Math.hypot(dx, dy) < 4) return;
       if (!d.moved) { d.moved = true; try { svg.setPointerCapture(ev.pointerId); } catch { /* нет захвата */ } svg.classList.add('grabbing'); }
       const k = G.vb.w / svg.getBoundingClientRect().width;
+      if (d.group) {
+        d.group.forEach((p) => { p.n.x = p.x + dx * k; p.n.y = p.y + dy * k; });
+        if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderNetwork(true); });
+        return;
+      }
       setVB({ ...d.vb, x: d.vb.x - dx * k, y: d.vb.y - dy * k });
     });
     const end = (ev) => {
@@ -2821,7 +3021,11 @@
         toast(W.dismissed.has(id) ? 'Пара отмечена «не дубль» и скрыта' : 'Пара возвращена в список');
         return;
       }
-      if ((x = on('[data-gf]'))) { G.f[x.dataset.gf] = x.dataset.v; renderGraph(true); $$(`[data-gf="${x.dataset.gf}"]`).forEach((b) => b.setAttribute('aria-pressed', String(b === x))); return; }
+      if ((x = on('[data-gf]'))) {
+        G.f[x.dataset.gf] = x.dataset.v;
+        if (x.dataset.gf === 'mode') { G.vb = null; rerender(); return; }
+        renderGraph(true); $$(`[data-gf="${x.dataset.gf}"]`).forEach((b) => b.setAttribute('aria-pressed', String(b === x))); return;
+      }
       if ((x = on('[data-gz]'))) { if (x.dataset.gz === 'fit') graphFit(); else graphZoom(x.dataset.gz === 'in' ? 1 / 1.25 : 1.25); return; }
       if ((x = on('[data-gsel]'))) { G.sel = x.dataset.gsel; renderGraph(true); return; }
       if ((x = on('[data-gaccept]'))) {
