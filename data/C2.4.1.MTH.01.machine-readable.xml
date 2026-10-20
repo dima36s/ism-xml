@@ -1,19 +1,16 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/xsl" href="ism-regulation-view.xsl"?>
-<!--
+<?xml version='1.0' encoding='UTF-8'?>
+<?xml-stylesheet type="text/xsl" href="ism-regulation-view.xsl"?><!--
   Эталонный машиночитаемый XML регламента C2.4.1.MTH.01 «Методика по разработке функциональных
   моделей информационных систем», версия 1.0. Источник: C2.4.1.MTH.01 (версия 1.0).docx.
-  Схема: ism-regulation-v1.xsd 1.1.
+  Схема: ism-regulation-v1.xsd 1.2.
+  У каждого требования — карточка корпоративного реестра: владелец, критичность C1–C4, критерий приёмки,
+  уровень, статус и рабочий номер карточки (владелец и критичность — предварительные, см. замечание EN-12).
 
   Document Layer  — <section>/<clause>/<text>: дословный текст документа с исходной нумерацией.
   Knowledge Layer — <requirement> (атомарные требования), <scope>, <roles>, <objects>, <semanticLinks>.
   Каждое атомарное требование вложено в свой пункт и несёт дословную цитату <quote>;
   сборка проверяет, что цитата действительно есть в тексте пункта.
--->
-<ismDocument xmlns="urn:protech:ism:regulation:1.0"
- xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
- xsi:schemaLocation="urn:protech:ism:regulation:1.0 ism-regulation-v1.xsd"
- id="C2.4.1.MTH.01" version="1.0" status="draft">
+--><ismDocument xmlns="urn:protech:ism:regulation:1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:protech:ism:regulation:1.0 ism-regulation-v1.xsd" id="C2.4.1.MTH.01" version="1.0" status="draft">
 
  <metadata>
   <title>Методика по разработке функциональных моделей информационных систем</title>
@@ -108,6 +105,19 @@
    <name>Пользователь модуля информационной системы</name>
    <alias>пользователи модулей информационной системы</alias>
   </role>
+  <role id="ROLE-OWNER-PROCESS" type="org-unit">
+   <name>Департамент цифровизации инжиниринга и платформ</name>
+   <alias>владелец процесса C2.4.1</alias>
+  </role>
+  <role id="ROLE-OWNER-DPD" type="org-unit">
+   <name>Отдел цифрового развития процессов</name>
+   <alias>менеджер процесса C2.4.1</alias>
+   <alias>разработчик Методики</alias>
+  </role>
+  <role id="ROLE-OWNER-ISM" type="org-unit">
+   <name>Отдел интегрированной системы менеджмента</name>
+   <alias>методолог ИСМ</alias>
+  </role>
  </roles>
 
  <objects>
@@ -122,6 +132,7 @@
   <object id="OBJ-DFD" type="diagram"><name>DFD-диаграмма</name><alias>Диаграмма потоков данных</alias></object>
   <object id="OBJ-PROCESS-MODEL" type="model"><name>Процессная модель</name></object>
   <object id="OBJ-SYSTEM-MODEL" type="model"><name>Системная модель функционала</name></object>
+  <object id="OBJ-NORMATIVE-REFS" type="document-part"><name>Перечень нормативных ссылок документа</name></object>
   <object id="OBJ-PROCESS-ROLE" type="concept"><name>Роль (в процессе)</name></object>
   <object id="OBJ-PROCESS-PARTICIPANT" type="concept"><name>Участник процесса</name></object>
   <object id="OBJ-BPMN-EVENT" type="notation-element">
@@ -209,13 +220,22 @@
       <p>ФМ описывает последовательность действий, необходимых для обработки информации, взаимодействия компонентов информационной системы друг с другом и пользователями, а также определяет границы ответственности каждого элемента информационной системы. ФМ интегрируется в модель бизнес-процесса в том числе на формализованном уровне (схема процесса, текст) после ввода разработанного решения в промышленную эксплуатацию.</p>
       <p>ФМ позволяет выявить возможные недостатки архитектуры, оценить сложность реализации отдельных модулей и обеспечить согласованность всех элементов информационной системы, а также дополнить понимание организации бизнес-процесса</p>
      </text>
-     <requirement id="REQ-C2.4.1-MTH01-3.1.3-01" number="3.1.3" modality="shall" modalityBasis="implicit" kind="process-rule" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.1.3-01" number="3.1.3" modality="shall" modalityBasis="implicit" kind="process-rule" source="derived" criticality="C3">
+      <title>Интеграция ФМ в модель бизнес-процесса</title>
       <statement>После ввода разработанного решения в промышленную эксплуатацию ФМ интегрируется в модель бизнес-процесса, в том числе на формализованном уровне (схема процесса, текст).</statement>
       <quote>ФМ интегрируется в модель бизнес-процесса в том числе на формализованном уровне (схема процесса, текст) после ввода разработанного решения в промышленную эксплуатацию.</quote>
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
       <object ref="OBJ-PROCESS-SCHEME"/>
+      <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
       <applicability><condition>После ввода разработанного решения в промышленную эксплуатацию</condition></applicability>
+      <verification method="document-review">
+       <criterion>После ввода решения в промышленную эксплуатацию схема процесса и текст ФМ включены в модель бизнес-процесса; указана редакция модели.</criterion>
+      </verification>
       <tags><tag>lifecycle</tag><tag>process-model</tag></tags>
+      <criticalityBasis status="preliminary">Модель бизнес-процесса расходится с фактическим решением; устраняется актуализацией модели.</criticalityBasis>
+      <registry id="TEMP-20261020-001" level="L2" status="draft" version="0.1">
+       <remark>Ответственный за интеграцию в документе не назван (замечание EN-05).</remark>
+      </registry>
      </requirement>
     </clause>
    </section>
@@ -257,35 +277,66 @@
        </row>
       </table>
      </text>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-01" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-01" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C3">
+      <title>Исполнитель описания текстовой части ФМ</title>
       <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, описывает текстовую часть ФМ.</statement>
       <quote>описание текстовой части ФМ</quote>
       <subject ref="ROLE-DIGITALIZATION-UNIT"/>
       <action code="describe">описание</action>
       <object ref="OBJ-FM-TEXT-PART"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>Текстовую часть ФМ подготовило подразделение, обеспечивающее цифровизацию бизнес-процессов; это видно из листа согласования или истории изменений ФМ.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Не определён исполнитель отдельной работы с ФМ; последствия локальны и устраняются распределением задачи.</criticalityBasis>
+      <registry id="TEMP-20261020-002" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-02" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-02" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C3">
+      <title>Актуализация схемы процесса</title>
       <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, актуализирует схему процесса с учетом операций, выполняемых информационной системой.</statement>
       <quote>актуализация схемы процесса с учетом выполняемых операций информационной системой</quote>
       <subject ref="ROLE-DIGITALIZATION-UNIT"/>
       <action code="actualize">актуализация</action>
       <object ref="OBJ-PROCESS-SCHEME"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>Схема процесса обновлена с учетом операций, выполняемых ИС; изменение внесено подразделением цифровизации и отражено в истории изменений схемы.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Не определён исполнитель отдельной работы с ФМ; последствия локальны и устраняются распределением задачи.</criticalityBasis>
+      <registry id="TEMP-20261020-003" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-03" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-03" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C3">
+      <title>Актуализация ФМ</title>
       <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, актуализирует ФМ.</statement>
       <quote>актуализация/оптимизация ФМ</quote>
       <subject ref="ROLE-DIGITALIZATION-UNIT"/>
       <action code="actualize">актуализация</action>
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>ФМ соответствует действующему функционалу модуля; актуализация выполнена подразделением цифровизации и отражена в истории изменений ФМ.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Не определён исполнитель отдельной работы с ФМ; последствия локальны и устраняются распределением задачи.</criticalityBasis>
+      <registry id="TEMP-20261020-004" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-04" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-04" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C3">
+      <title>Оптимизация ФМ</title>
       <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, оптимизирует ФМ.</statement>
       <quote>актуализация/оптимизация ФМ</quote>
       <subject ref="ROLE-DIGITALIZATION-UNIT"/>
       <action code="optimize">оптимизация</action>
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>Оптимизация ФМ выполнена подразделением цифровизации; изменения отражены в истории изменений ФМ.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Не определён исполнитель отдельной работы с ФМ; последствия локальны и устраняются распределением задачи.</criticalityBasis>
+      <registry id="TEMP-20261020-005" level="L2" status="draft" version="0.1">
+       <remark>Что считается оптимизацией ФМ, в документе не определено — критерий требует уточнения владельцем.</remark>
+      </registry>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-05" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-05" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C2">
+      <title>Согласование новой редакции ФМ</title>
       <statement>Подразделение, обеспечивающее цифровизацию бизнес-процессов, согласовывает новую редакцию ФМ, выпускаемую взамен ранее утвержденной, с владельцами модулей и ФЗ.</statement>
       <quote>согласование с владельцами модулей и ФЗ новой редакции ФМ взамен ранее утвержденной</quote>
       <subject ref="ROLE-DIGITALIZATION-UNIT"/>
@@ -293,21 +344,41 @@
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
       <counterpart ref="ROLE-MODULE-OWNER"/>
       <counterpart ref="ROLE-FUNCTIONAL-CUSTOMER"/>
+      <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
       <applicability><condition>Выпуск новой редакции ФМ взамен ранее утвержденной</condition></applicability>
+     <verification method="record-check">
+       <criterion>Новая редакция ФМ до утверждения согласована со всеми владельцами затронутых модулей и ФЗ; есть лист согласования.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Без согласования/утверждения ФМ не имеет силы и не может использоваться как действующее описание.</criticalityBasis>
+      <registry id="TEMP-20261020-006" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-06" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-06" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C2">
+      <title>Согласование ФМ владельцами модулей</title>
       <statement>Владельцы модулей согласовывают ФМ.</statement>
       <quote>согласование ФМ</quote>
       <subject ref="ROLE-MODULE-OWNER"/>
       <action code="agree">согласование</action>
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>В листе согласования ФМ есть отметки всех владельцев затронутых модулей.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Без согласования/утверждения ФМ не имеет силы и не может использоваться как действующее описание.</criticalityBasis>
+      <registry id="TEMP-20261020-007" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-3.3-07" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-3.3-07" number="3.3" modality="shall" modalityBasis="implicit" kind="responsibility" source="derived" criticality="C2">
+      <title>Утверждение ФМ функциональным заказчиком</title>
       <statement>ФЗ утверждает ФМ.</statement>
       <quote>утверждение ФМ</quote>
       <subject ref="ROLE-FUNCTIONAL-CUSTOMER"/>
       <action code="approve">утверждение</action>
       <object ref="OBJ-FUNCTIONAL-MODEL"/>
+     <owner ref="ROLE-OWNER-PROCESS" status="preliminary"/>
+     <verification method="record-check">
+       <criterion>ФМ утверждена ФЗ: есть отметка об утверждении с датой.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Без согласования/утверждения ФМ не имеет силы и не может использоваться как действующее описание.</criticalityBasis>
+      <registry id="TEMP-20261020-008" level="L2" status="draft" version="0.1"/>
      </requirement>
     </clause>
    </section>
@@ -374,19 +445,31 @@
 
    <clause id="CL-4-intro" type="normative">
     <text><p>ФМ представляет собой комплексное описание информационной системы/части информационной системы, которое включает две ключевые составляющие: описательную (текстовую) и графическую часть.</p></text>
-    <requirement id="REQ-C2.4.1-MTH01-4-01" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+    <requirement id="REQ-C2.4.1-MTH01-4-01" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+     <title>Наличие текстовой части ФМ</title>
      <statement>ФМ должна включать описательную (текстовую) часть.</statement>
      <quote>две ключевые составляющие: описательную (текстовую) и графическую часть</quote>
      <object ref="OBJ-FUNCTIONAL-MODEL"/>
      <object ref="OBJ-FM-TEXT-PART"/>
-     <verification method="document-review"/>
+     <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+     <verification method="document-review">
+      <criterion>ФМ содержит текстовую (описательную) часть.</criterion>
+     </verification>
+     <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+     <registry id="TEMP-20261020-009" level="L2" status="draft" version="0.1"/>
     </requirement>
-    <requirement id="REQ-C2.4.1-MTH01-4-02" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+    <requirement id="REQ-C2.4.1-MTH01-4-02" number="4 (вводный абзац)" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+     <title>Наличие графической части ФМ</title>
      <statement>ФМ должна включать графическую часть.</statement>
      <quote>две ключевые составляющие: описательную (текстовую) и графическую часть</quote>
      <object ref="OBJ-FUNCTIONAL-MODEL"/>
      <object ref="OBJ-FM-GRAPHIC-PART"/>
-     <verification method="document-review"/>
+     <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+     <verification method="document-review">
+      <criterion>ФМ содержит графическую часть — схему процесса.</criterion>
+     </verification>
+     <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+     <registry id="TEMP-20261020-010" level="L2" status="draft" version="0.1"/>
     </requirement>
    </clause>
 
@@ -402,33 +485,63 @@
        <item>внутренний процесс преобразования данных и взаимодействиями с другими модулями/информационными системами.</item>
       </list>
      </text>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.1-01" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-01" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+      <title>Раздел «Назначение и основные функции модуля»</title>
       <statement>Текстовая часть ФМ должна включать раздел о назначении и основных функциях модуля информационной системы.</statement>
       <quote>назначения и основные функции модуля информационной системы</quote>
       <object ref="OBJ-FM-TEXT-PART"/>
       <object ref="OBJ-FM-SEC-PURPOSE"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В текстовой части ФМ есть раздел о назначении и основных функциях модуля.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+      <registry id="TEMP-20261020-011" level="L2" status="draft" version="0.1">
+       <remark>Название раздела в п. 4.1.1 и в заголовке п. 4.1.2 расходится (замечание EN-09).</remark>
+      </registry>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.1-02" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-02" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+      <title>Раздел «Бизнес-роли и их функции»</title>
       <statement>Текстовая часть ФМ должна включать раздел о бизнес-ролях и их функциях в информационной системе.</statement>
       <quote>бизнес-роли и их функции, применяемые информационной системой</quote>
       <object ref="OBJ-FM-TEXT-PART"/>
       <object ref="OBJ-FM-SEC-ROLES"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В текстовой части ФМ есть раздел о бизнес-ролях и их функциях в ИС.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+      <registry id="TEMP-20261020-012" level="L2" status="draft" version="0.1">
+       <remark>Название раздела в п. 4.1.1 и в заголовке п. 4.1.3 расходится (замечание EN-09).</remark>
+      </registry>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.1-03" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-03" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+      <title>Раздел «Входные и выходные данные»</title>
       <statement>Текстовая часть ФМ должна включать раздел о входных и выходных данных с указанием поставщика/потребителя.</statement>
       <quote>входные и выходные данные, поставщик/потребитель</quote>
       <object ref="OBJ-FM-TEXT-PART"/>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В текстовой части ФМ есть раздел о входных и выходных данных с поставщиками и потребителями.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+      <registry id="TEMP-20261020-013" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.1-04" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.1-04" number="4.1.1" modality="shall" modalityBasis="implicit" kind="structure" source="derived" criticality="C2">
+      <title>Раздел «Преобразование данных и взаимодействие»</title>
       <statement>Текстовая часть ФМ должна включать раздел о внутреннем процессе преобразования данных и взаимодействии с другими модулями/информационными системами.</statement>
       <quote>внутренний процесс преобразования данных и взаимодействиями с другими модулями/информационными системами</quote>
       <object ref="OBJ-FM-TEXT-PART"/>
       <object ref="OBJ-FM-SEC-PROCESSING"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В текстовой части ФМ есть раздел о внутреннем процессе преобразования данных и взаимодействии с другими модулями и ИС.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Обязательная часть ФМ: без неё ФМ неполна и не может быть согласована.</criticalityBasis>
+      <registry id="TEMP-20261020-014" level="L2" status="draft" version="0.1">
+       <remark>Название раздела в п. 4.1.1 и в заголовке п. 4.1.5 расходится (замечание EN-09).</remark>
+      </registry>
      </requirement>
     </clause>
 
@@ -437,29 +550,55 @@
       <p>Назначение и основные функции модуля информационной системы:</p>
       <p>Пункт должен подробно раскрывать ключевые цели, преследуемые при внедрении рассматриваемого модуля, а также представлять полный перечень всех основных операций, осуществляемых данным модулем. Его задача заключается в демонстрации четкого понимания того, каким именно способом этот модуль помогает решать конкретные бизнес-задачи Предприятия, облегчая выполнение повседневных рабочих процессов и существенно повышая общую производительность труда сотрудников. Особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия, что в конечном итоге ведет к значительному росту эффективности.</p>
      </text>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.2-01" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-01" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+      <title>Цели внедрения модуля</title>
       <statement>Раздел о назначении и основных функциях модуля должен подробно раскрывать ключевые цели, преследуемые при внедрении модуля.</statement>
       <quote>Пункт должен подробно раскрывать ключевые цели, преследуемые при внедрении рассматриваемого модуля</quote>
       <object ref="OBJ-FM-SEC-PURPOSE"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В разделе перечислены ключевые цели внедрения модуля.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-015" level="L2" status="draft" version="0.1">
+       <remark>Слово «подробно» не задаёт бинарного критерия; глубину описания определяет эксперт.</remark>
+      </registry>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.2-02" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-02" number="4.1.2" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C2">
+      <title>Полный перечень операций модуля</title>
       <statement>Раздел о назначении и основных функциях модуля должен содержать полный перечень всех основных операций, осуществляемых модулем.</statement>
       <quote>а также представлять полный перечень всех основных операций, осуществляемых данным модулем</quote>
       <object ref="OBJ-FM-SEC-PURPOSE"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Перечень содержит все основные операции модуля; сверен с функционалом модуля или ТЗ на него.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Ядро ФМ: пропуск ведёт к неописанному функционалу модуля.</criticalityBasis>
+      <registry id="TEMP-20261020-016" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.2-03" number="4.1.2" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-03" number="4.1.2" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+      <title>Решаемые бизнес-задачи</title>
       <statement>Раздел о назначении и основных функциях модуля должен показывать, каким способом модуль помогает решать конкретные бизнес-задачи Предприятия.</statement>
       <quote>Его задача заключается в демонстрации четкого понимания того, каким именно способом этот модуль помогает решать конкретные бизнес-задачи Предприятия</quote>
       <object ref="OBJ-FM-SEC-PURPOSE"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Для ключевых целей указано, какую бизнес-задачу Предприятия решает модуль и каким способом.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-017" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.2-04" number="4.1.2" modality="should" modalityBasis="implicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.2-04" number="4.1.2" modality="should" modalityBasis="implicit" kind="content" source="derived" criticality="C4">
+      <title>Вклад модуля в оптимизацию и автоматизацию</title>
       <statement>В разделе о назначении и основных функциях модуля особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия.</statement>
       <quote>Особое внимание уделяется тому, как внедрение модуля способствует оптимизации рутинных процедур, снижению временных затрат и повышению уровня автоматизации ключевых аспектов деятельности Предприятия</quote>
       <object ref="OBJ-FM-SEC-PURPOSE"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>В разделе описано, как модуль сокращает рутинные операции и временные затраты и повышает автоматизацию.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Рекомендация («рекомендуется»): влияет на наглядность, а не на полноту ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-018" level="L2" status="draft" version="0.1"/>
      </requirement>
     </clause>
 
@@ -471,17 +610,29 @@
        <p>В разделе должна быть представлена подробная классификация категорий пользователей, непосредственно вовлеченных в работу с данным модулем информационной системы, а также четко обозначены их полномочия и функциональные возможности внутри рамок предоставляемого информационной системой набора функций.</p>
        <p>Главная задача подраздела состоит в обеспечении ясного и прозрачного распределения обязанностей среди различных групп пользователей, установлении границ их компетенций и определении объема полномочий относительно конкретных элементов функциональности информационной системы.</p>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-01" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-01" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+       <title>Классификация категорий пользователей</title>
        <statement>Раздел о бизнес-ролях должен содержать подробную классификацию категорий пользователей, непосредственно вовлеченных в работу с модулем информационной системы.</statement>
        <quote>В разделе должна быть представлена подробная классификация категорий пользователей, непосредственно вовлеченных в работу с данным модулем информационной системы</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>В разделе приведён перечень категорий пользователей модуля; каждая категория описана.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-019" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-02" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3a-02" number="4.1.3 а)" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+       <title>Полномочия категорий пользователей</title>
        <statement>В разделе о бизнес-ролях должны быть четко обозначены полномочия и функциональные возможности категорий пользователей в рамках набора функций, предоставляемого информационной системой.</statement>
        <quote>а также четко обозначены их полномочия и функциональные возможности внутри рамок предоставляемого информационной системой набора функций</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждой категории пользователей указаны полномочия и доступные функции модуля.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-020" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
      <clause id="CL-4.1.3-b" label="б)" type="normative">
@@ -493,42 +644,80 @@
         <item>ограничение функционала и контроля доступа: чётко сформулированы ограничения по доступу к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя.</item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-01" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-01" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+       <title>Назначение бизнес-роли</title>
        <statement>Для каждой бизнес-роли должно быть представлено подробное описание ее назначения.</statement>
        <quote>для каждой отдельной роли должно быть представлено подробное описание её назначения и области ответственности</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждой бизнес-роли описано её назначение.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-021" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-02" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-02" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+       <title>Область ответственности бизнес-роли</title>
        <statement>Для каждой бизнес-роли должно быть представлено подробное описание ее области ответственности.</statement>
        <quote>для каждой отдельной роли должно быть представлено подробное описание её назначения и области ответственности</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждой бизнес-роли описана её область ответственности.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-022" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-03" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="authoritative">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-03" number="4.1.3 б)" modality="shall" modalityBasis="explicit" kind="content" source="authoritative" criticality="C3">
+       <title>Перечень операций роли</title>
        <statement>Каждая роль должна иметь четко обозначенный список возможных операций, выполняемых в информационной системе.</statement>
        <quote>каждая роль должна иметь четко обозначенный список возможных операций, выполняемых в информационной системе</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждой роли приведён список операций, которые она выполняет в ИС.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-023" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-04" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-04" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C2">
+       <title>Привязка функций к системным ролям</title>
        <statement>Функции бизнес-ролей должны быть привязаны к системным ролям информационной системы.</statement>
        <quote>определение перечня основных функций с привязкой к системным ролям</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Каждая функция бизнес-роли сопоставлена с системной ролью ИС.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Влияет на настройку ролевой модели ИС: функции без привязки к системным ролям не реализуемы однозначно.</criticalityBasis>
+       <registry id="TEMP-20261020-024" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-05" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="authoritative">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-05" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="authoritative" criticality="C3">
+       <title>Возможности и ограничения функций</title>
        <statement>Функции приводятся с указанием конкретных возможностей и ограничений.</statement>
        <quote>Функции приводятся с указанием конкретных возможностей и ограничений</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждой функции роли указаны возможности и ограничения.</criterion>
+       </verification>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-025" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-06" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.3b-06" number="4.1.3 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C2">
+       <title>Ограничения доступа к критичным ресурсам</title>
        <statement>В разделе должны быть четко сформулированы ограничения доступа к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя.</statement>
        <quote>чётко сформулированы ограничения по доступу к критически важным ресурсам и операциям в зависимости от уровня компетенции каждого пользователя</quote>
        <object ref="OBJ-FM-SEC-ROLES"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждого уровня компетенции пользователей указаны ограничения доступа к критически важным ресурсам и операциям.</criterion>
+       </verification>
        <tags><tag>access-control</tag></tags>
+       <criticalityBasis status="preliminary">Риск для информационной безопасности: не зафиксированы ограничения доступа к критичным ресурсам.</criticalityBasis>
+       <registry id="TEMP-20261020-026" level="L2" status="draft" version="0.1">
+        <remark>Перечень критически важных ресурсов документ не определяет — его задаёт ФМ конкретного модуля.</remark>
+       </registry>
       </requirement>
      </clause>
     </clause>
@@ -538,38 +727,72 @@
       <p>Входные и выходные данные, поставщик/потребитель.</p>
       <p>В разделе должно быть представлено детальное рассмотрение структуры движения информационных потоков, протекающих через всю информационную систему до начала внутренней процедуры обработки и после полного завершения всех предусмотренных этапов преобразования данных. Основной целью подобного изложения является наглядное отображение существующих связей между отдельными компонентами информационной системы, а также демонстрация способов взаимодействия внутренних компонентов с внешним.</p>
      </text>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.4-01" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-01" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+      <title>Входные информационные потоки</title>
       <statement>Раздел о входных и выходных данных должен детально рассматривать структуру информационных потоков до начала внутренней процедуры обработки (входные данные).</statement>
       <quote>В разделе должно быть представлено детальное рассмотрение структуры движения информационных потоков, протекающих через всю информационную систему до начала внутренней процедуры обработки</quote>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Описаны все входные информационные потоки: состав данных и точка поступления до начала обработки.</criterion>
+      </verification>
       <tags><tag>data-flow</tag></tags>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-027" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.4-02" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-02" number="4.1.4" modality="shall" modalityBasis="explicit" kind="content" source="derived" criticality="C3">
+      <title>Выходные информационные потоки</title>
       <statement>Раздел о входных и выходных данных должен детально рассматривать структуру информационных потоков после полного завершения всех этапов преобразования данных (выходные данные).</statement>
       <quote>и после полного завершения всех предусмотренных этапов преобразования данных</quote>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Описаны все выходные информационные потоки после завершения преобразования данных.</criterion>
+      </verification>
       <tags><tag>data-flow</tag></tags>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-028" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.4-03" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-03" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C2">
+      <title>Поставщики и потребители данных</title>
       <statement>Для входных и выходных данных указываются поставщик и потребитель.</statement>
       <quote>Входные и выходные данные, поставщик/потребитель.</quote>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Для каждого входного и выходного потока указаны поставщик и потребитель.</criterion>
+      </verification>
       <tags><tag>data-flow</tag></tags>
+      <criticalityBasis status="preliminary">Риск ошибок интеграции: без интерфейсов, протоколов и поставщиков/потребителей данных смежные системы не согласуются.</criticalityBasis>
+      <registry id="TEMP-20261020-029" level="L2" status="draft" version="0.1">
+       <remark>Требование выведено из заголовка пункта: в тексте п. 4.1.4 поставщик и потребитель не упомянуты.</remark>
+      </registry>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.4-04" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-04" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+      <title>Связи между компонентами ИС</title>
       <statement>Изложение должно наглядно отображать существующие связи между отдельными компонентами информационной системы.</statement>
       <quote>наглядное отображение существующих связей между отдельными компонентами информационной системы</quote>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Связи между компонентами ИС показаны схемой или таблицей.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-030" level="L2" status="draft" version="0.1"/>
      </requirement>
-     <requirement id="REQ-C2.4.1-MTH01-4.1.4-05" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.1.4-05" number="4.1.4" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+      <title>Взаимодействие с внешними компонентами</title>
       <statement>Изложение должно демонстрировать способы взаимодействия внутренних компонентов информационной системы с внешними.</statement>
       <quote>демонстрация способов взаимодействия внутренних компонентов с внешним</quote>
       <object ref="OBJ-FM-SEC-DATA-IO"/>
-      <verification method="document-review"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="document-review">
+       <criterion>Показано взаимодействие внутренних компонентов ИС с внешними системами и пользователями.</criterion>
+      </verification>
+      <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+      <registry id="TEMP-20261020-031" level="L2" status="draft" version="0.1">
+       <remark>В тексте «с внешним» — принято «с внешними» (замечание EN-10).</remark>
+      </registry>
      </requirement>
     </clause>
 
@@ -584,35 +807,63 @@
         <item>обозначение форматов хранения промежуточных результатов и итоговых данных.</item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-01" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-01" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+       <title>Этапы трансформации данных</title>
        <statement>В разделе подробно излагаются этапы трансформации исходных данных внутри информационной системы: прием данных, предварительная обработка, фильтрация, нормализация, агрегация и вывод результата.</statement>
        <quote>подробное изложение этапов трансформации исходных данных внутри информационной системы: прием данных, предварительная обработка, фильтрация, нормализация, агрегация и вывод результата</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Описаны применимые к модулю этапы обработки: приём, предварительная обработка, фильтрация, нормализация, агрегация, вывод результата.</criterion>
+       </verification>
        <tags><tag>data-processing</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-032" level="L2" status="draft" version="0.1">
+        <remark>Не все этапы применимы к каждому модулю; неприменимые следует отметить явно.</remark>
+       </registry>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-02" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="method" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-02" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="method" source="derived" criticality="C3">
+       <title>DFD-диаграмма обработки данных</title>
        <statement>Этапы трансформации данных представляются в виде DFD-диаграмм.</statement>
        <quote>(DFD-диаграммы)</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
        <object ref="OBJ-DFD"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Этапы трансформации данных представлены DFD-диаграммой.</criterion>
+       </verification>
        <tags><tag>data-processing</tag><tag>dfd</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-033" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-03" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-03" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+       <title>Типы алгоритмов анализа и МО</title>
        <statement>Описываются типы используемых алгоритмов анализа и машинного обучения.</statement>
        <quote>описание типов используемых алгоритмов анализа и машинного обучения</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
        <applicability><condition>В модуле используются алгоритмы анализа и/или машинного обучения</condition></applicability>
-       <verification method="document-review"/>
+       <verification method="document-review">
+        <criterion>Если в модуле используются алгоритмы анализа или машинного обучения, указаны их типы.</criterion>
+       </verification>
        <tags><tag>machine-learning</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-034" level="L2" status="draft" version="0.1">
+        <remark>Условие применимости выведено из формулировки (замечание EN-08).</remark>
+       </registry>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-04" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5a-04" number="4.1.5 а)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C3">
+       <title>Форматы хранения данных</title>
        <statement>Обозначаются форматы хранения промежуточных результатов и итоговых данных.</statement>
        <quote>обозначение форматов хранения промежуточных результатов и итоговых данных</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Указаны форматы хранения промежуточных результатов и итоговых данных.</criterion>
+       </verification>
        <tags><tag>data-storage</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-035" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
      <clause id="CL-4.1.5-b" label="б)" type="normative">
@@ -623,19 +874,31 @@
         <item>стандартизация протоколов передачи данных и форматов сообщений, принятых для межмодульного взаимодействия.</item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-01" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-01" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C2">
+       <title>Интерфейсы с инфраструктурой предприятия</title>
        <statement>Детально перечисляются интерфейсы связи с остальными элементами информационной инфраструктуры предприятия (базы данных, ERP-системы, BI-платформы).</statement>
        <quote>детальное перечисление интерфейсов связи с остальными элементами информационной инфраструктуры предприятия (базы данных, ERP-системы, BI-платформы)</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Перечислены все интерфейсы модуля с базами данных, ERP, BI и другими элементами инфраструктуры.</criterion>
+       </verification>
        <tags><tag>integration</tag></tags>
+       <criticalityBasis status="preliminary">Риск ошибок интеграции: без интерфейсов, протоколов и поставщиков/потребителей данных смежные системы не согласуются.</criticalityBasis>
+       <registry id="TEMP-20261020-036" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-02" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.1.5b-02" number="4.1.5 б)" modality="shall" modalityBasis="implicit" kind="content" source="derived" criticality="C2">
+       <title>Протоколы и форматы сообщений</title>
        <statement>Описываются стандартизированные протоколы передачи данных и форматы сообщений, принятые для межмодульного взаимодействия.</statement>
        <quote>стандартизация протоколов передачи данных и форматов сообщений, принятых для межмодульного взаимодействия</quote>
        <object ref="OBJ-FM-SEC-PROCESSING"/>
-       <verification method="document-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="document-review">
+        <criterion>Для каждого интерфейса указаны протокол передачи данных и формат сообщений.</criterion>
+       </verification>
        <tags><tag>integration</tag></tags>
+       <criticalityBasis status="preliminary">Риск ошибок интеграции: без интерфейсов, протоколов и поставщиков/потребителей данных смежные системы не согласуются.</criticalityBasis>
+       <registry id="TEMP-20261020-037" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
     </clause>
@@ -645,14 +908,22 @@
 
     <clause id="CL-4.2.1" number="4.2.1" type="normative">
      <text><p>Ключевым элементом описания графической части ФМ является визуальная схема процесса, представленная в нотации стандарта Business Process Model and Notation (BPMN) версии 2.0. данная нотация позволяет структурированно изображать процессы и операции, помогая наглядно демонстрировать этапы выполнения действий, условия принятия решений и потоки данных.</p></text>
-     <requirement id="REQ-C2.4.1-MTH01-4.2.1-01" number="4.2.1" modality="shall" modalityBasis="implicit" kind="method" source="derived">
+     <requirement id="REQ-C2.4.1-MTH01-4.2.1-01" number="4.2.1" modality="shall" modalityBasis="implicit" kind="method" source="derived" criticality="C2">
+      <title>Схема процесса в BPMN 2.0</title>
       <statement>Ключевым элементом графической части ФМ должна быть визуальная схема процесса в нотации BPMN версии 2.0.</statement>
       <quote>Ключевым элементом описания графической части ФМ является визуальная схема процесса, представленная в нотации стандарта Business Process Model and Notation (BPMN) версии 2.0.</quote>
       <object ref="OBJ-FM-GRAPHIC-PART"/>
       <object ref="OBJ-PROCESS-SCHEME"/>
-      <verification method="model-validation"/>
+      <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+      <verification method="model-validation">
+       <criterion>Графическая часть содержит схему процесса в нотации BPMN 2.0 (файл .bpmn или выгрузка из BPMN-редактора).</criterion>
+      </verification>
       <externalReference ref="REF-BPMN20"/>
       <tags><tag>bpmn</tag></tags>
+      <criticalityBasis status="preliminary">Основа графической части: без BPMN 2.0 схема не проверяется и не интегрируется в модель процесса.</criticalityBasis>
+      <registry id="TEMP-20261020-038" level="L2" status="draft" version="0.1">
+       <remark>BPMN 2.0 отсутствует в перечне нормативных ссылок (замечание EN-03).</remark>
+      </registry>
      </requirement>
     </clause>
 
@@ -667,22 +938,33 @@
         <item>логическое завершение потоков: процесс начинается и заканчивается определенными пунктами (начало и конец процесса).</item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-01" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-01" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived" criticality="C3">
+       <title>Разделение зон ответственности на схеме</title>
        <statement>На схеме процесса должны быть четко разделены зоны ответственности: шаги и взаимодействия процесса отражают зоны ответственности каждого участника.</statement>
        <quote>четкое разделение зон ответственности: каждый процесс состоит из последовательных шагов и взаимодействий, отражающих зоны ответственности каждого участника</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
-       <verification method="model-validation"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="model-validation">
+        <criterion>Каждый шаг и взаимодействие на схеме находится в дорожке или пуле ответственного участника.</criterion>
+       </verification>
        <tags><tag>bpmn</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-039" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-02" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2a-02" number="4.2.2 а)" modality="shall" modalityBasis="implicit" kind="modeling-rule" source="derived" criticality="C3">
+       <title>Начало и конец процесса</title>
        <statement>Процесс должен начинаться и заканчиваться определенными пунктами — началом и концом процесса (в нотации BPMN — начальным и завершающим событиями).</statement>
        <quote>процесс начинается и заканчивается определенными пунктами (начало и конец процесса)</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
        <object ref="OBJ-BPMN-EVENT"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
        <verification method="model-validation">
+        <criterion>В каждом процессе есть начальное и завершающее события; автоматическая проверка не находит нарушений.</criterion>
         <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process[not(bpmn:startEvent) or not(bpmn:endEvent)]</check>
        </verification>
        <tags><tag>bpmn</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-040" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
 
@@ -703,7 +985,8 @@
         <item>дорожки – выделяются зоны ответственности отдельных подразделений или ролей в процессе.<figure src="media/4.2.2b-pool-lanes.png" alt="Пул с двумя дорожками BPMN"/></item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-01" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-01" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived" criticality="C3">
+       <title>Стандартные символы BPMN</title>
        <statement>На схеме процесса используются стандартные символы и условные обозначения BPMN 2.0: события, действия (операции), потоки управления, шлюзы, пулы и дорожки.</statement>
        <quote>Использование стандартных символов и условных обозначений</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
@@ -714,23 +997,40 @@
        <object ref="OBJ-BPMN-PARALLEL-GATEWAY"/>
        <object ref="OBJ-BPMN-POOL"/>
        <object ref="OBJ-BPMN-LANE"/>
-       <verification method="model-validation"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="model-validation">
+        <criterion>На схеме используются только стандартные элементы BPMN 2.0.</criterion>
+       </verification>
        <externalReference ref="REF-BPMN20"/>
        <tags><tag>bpmn</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-041" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-02" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-02" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived" criticality="C3">
+       <title>Исключающий шлюз для альтернатив</title>
        <statement>Для обозначения альтернативных потоков процесса или сходящихся потоков управления используется исключающий шлюз.</statement>
        <quote>используется для обозначения альтернативных потоков процесса или сходящихся потоков управления в рамках процесса</quote>
        <object ref="OBJ-BPMN-EXCLUSIVE-GATEWAY"/>
-       <verification method="model-validation"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="model-validation">
+        <criterion>Альтернативные и сходящиеся потоки оформлены исключающими шлюзами.</criterion>
+       </verification>
        <tags><tag>bpmn</tag><tag>gateway</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-042" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-03" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2b-03" number="4.2.2 б)" modality="shall" modalityBasis="implicit" kind="notation" source="derived" criticality="C3">
+       <title>Параллельный шлюз для параллельных потоков</title>
        <statement>Для обозначения параллельных потоков процесса (слияние, ветвление, соединение потоков управления) используется параллельный шлюз.</statement>
        <quote>используется для обозначения параллельных потоков процесса: слияния/ветвления/ соединения потоков управления в рамках процесса</quote>
        <object ref="OBJ-BPMN-PARALLEL-GATEWAY"/>
-       <verification method="model-validation"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="model-validation">
+        <criterion>Параллельные ветвления и слияния оформлены параллельными шлюзами.</criterion>
+       </verification>
        <tags><tag>bpmn</tag><tag>gateway</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-043" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
 
@@ -745,53 +1045,76 @@
         <item>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</item>
        </list>
       </text>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2v-01" number="4.2.2 в)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2v-01" number="4.2.2 в)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative" criticality="C2">
+       <title>Связь элементов схемы с ответственными</title>
        <statement>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</statement>
        <quote>Каждый элемент на диаграмме должен иметь четкую связь с ответственными исполнителями или ролями.</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
        <object ref="OBJ-BPMN-POOL"/>
        <object ref="OBJ-BPMN-LANE"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
        <verification method="model-validation">
+        <criterion>Каждый элемент схемы находится в дорожке или пуле ответственного; автоматическая проверка не находит нарушений.</criterion>
         <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process[bpmn:laneSet]/*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity or self::bpmn:exclusiveGateway or self::bpmn:parallelGateway or self::bpmn:inclusiveGateway or self::bpmn:eventBasedGateway or self::bpmn:complexGateway or self::bpmn:startEvent or self::bpmn:endEvent or self::bpmn:intermediateCatchEvent or self::bpmn:intermediateThrowEvent][not(@id = //bpmn:lane/bpmn:flowNodeRef)] | //bpmn:process[not(bpmn:laneSet)][not(@id = //bpmn:participant/@processRef)]</check>
        </verification>
        <tags><tag>bpmn</tag><tag>roles</tag></tags>
+       <criticalityBasis status="preliminary">Без привязки к исполнителям схема не определяет ответственность за шаги процесса.</criticalityBasis>
+       <registry id="TEMP-20261020-044" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
 
      <clause id="CL-4.2.2-g" label="г)" type="normative">
       <text><p>Четкость и простота структуры: минимизация количества пересекающихся линий (потоков управления).</p></text>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2g-01" number="4.2.2 г)" modality="should" modalityBasis="implicit" kind="modeling-rule" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2g-01" number="4.2.2 г)" modality="should" modalityBasis="implicit" kind="modeling-rule" source="derived" criticality="C4">
+       <title>Минимум пересечений потоков</title>
        <statement>На схеме процесса следует минимизировать количество пересекающихся линий (потоков управления).</statement>
        <quote>минимизация количества пересекающихся линий (потоков управления)</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
        <object ref="OBJ-BPMN-SEQUENCE-FLOW"/>
-       <verification method="expert-review"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
+       <verification method="expert-review">
+        <criterion>Пересечения потоков управления отсутствуют или сведены к минимуму по оценке эксперта.</criterion>
+       </verification>
        <tags><tag>bpmn</tag><tag>layout</tag></tags>
+       <criticalityBasis status="preliminary">Рекомендация («рекомендуется»): влияет на наглядность, а не на полноту ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-045" level="L2" status="draft" version="0.1">
+        <remark>«Минимизация» не даёт бинарного критерия; решение принимает эксперт.</remark>
+       </registry>
       </requirement>
      </clause>
 
      <clause id="CL-4.2.2-d" label="д)" type="normative">
       <text><p>Последовательность и логика потока: каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных. Недопустимы ситуации, когда процессы останавливаются или теряют логику следования, когда процедура/операция является завершающим событием.</p></text>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-01" number="4.2.2 д)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-01" number="4.2.2 д)" modality="shall" modalityBasis="explicit" kind="modeling-rule" source="authoritative" criticality="C3">
+       <title>Непрерывность потока операций</title>
        <statement>Каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных.</statement>
        <quote>каждая операция должна последовательно вести к следующей, обеспечивая непрерывность процесса и потока данных</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
        <object ref="OBJ-BPMN-ACTIVITY"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
        <verification method="model-validation">
+        <criterion>У каждой операции есть исходящий поток управления; автоматическая проверка не находит нарушений.</criterion>
         <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process//*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity][not(@id = //bpmn:sequenceFlow/@sourceRef)]</check>
        </verification>
        <tags><tag>bpmn</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-046" level="L2" status="draft" version="0.1"/>
       </requirement>
-      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-02" number="4.2.2 д)" modality="shall-not" modalityBasis="explicit" kind="modeling-rule" source="derived">
+      <requirement id="REQ-C2.4.1-MTH01-4.2.2d-02" number="4.2.2 д)" modality="shall-not" modalityBasis="explicit" kind="modeling-rule" source="derived" criticality="C3">
+       <title>Запрет обрыва процесса</title>
        <statement>Не допускается, чтобы процесс останавливался или терял логику следования, в том числе чтобы процедура/операция являлась завершающим событием процесса.</statement>
        <quote>Недопустимы ситуации, когда процессы останавливаются или теряют логику следования, когда процедура/операция является завершающим событием.</quote>
        <object ref="OBJ-PROCESS-SCHEME"/>
        <object ref="OBJ-BPMN-ACTIVITY"/>
        <object ref="OBJ-BPMN-EVENT"/>
+       <owner ref="ROLE-OWNER-DPD" status="preliminary"/>
        <verification method="model-validation">
+        <criterion>Элементы без исходящего потока — только завершающие события; автоматическая проверка не находит нарушений.</criterion>
         <check language="xpath-1.0" target="bpmn-2.0" status="proposed">//bpmn:process//*[self::bpmn:task or self::bpmn:userTask or self::bpmn:serviceTask or self::bpmn:sendTask or self::bpmn:receiveTask or self::bpmn:manualTask or self::bpmn:businessRuleTask or self::bpmn:scriptTask or self::bpmn:subProcess or self::bpmn:callActivity or self::bpmn:exclusiveGateway or self::bpmn:parallelGateway or self::bpmn:inclusiveGateway or self::bpmn:eventBasedGateway or self::bpmn:complexGateway or self::bpmn:startEvent or self::bpmn:intermediateCatchEvent or self::bpmn:intermediateThrowEvent][not(@id = //bpmn:sequenceFlow/@sourceRef)]</check>
        </verification>
        <tags><tag>bpmn</tag></tags>
+       <criticalityBasis status="preliminary">Снижает качество раздела или схемы; выявляется на экспертизе и исправляется новой редакцией ФМ.</criticalityBasis>
+       <registry id="TEMP-20261020-047" level="L2" status="draft" version="0.1"/>
       </requirement>
      </clause>
     </clause>
@@ -802,10 +1125,18 @@
   <section id="SAPP1" number="Приложение 1" title="Нормативные ссылки" kind="appendix">
    <clause id="CL-APP1" type="normative">
     <text><p>Список источников актуален на момент утверждения документа. При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</p></text>
-    <requirement id="REQ-C2.4.1-MTH01-APP1-01" number="Приложение 1" modality="shall" modalityBasis="explicit" kind="document-control" source="authoritative">
+    <requirement id="REQ-C2.4.1-MTH01-APP1-01" number="Приложение 1" modality="shall" modalityBasis="explicit" kind="document-control" source="authoritative" criticality="C3">
+     <title>Актуальность нормативных ссылок</title>
      <statement>При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</statement>
      <quote>При работе с документом следует проверить актуальность источников и использовать их последние утвержденные редакции или редакции документов, изданных взамен.</quote>
+     <object ref="OBJ-NORMATIVE-REFS"/>
+     <owner ref="ROLE-OWNER-ISM" status="preliminary"/>
+     <verification method="document-review">
+      <criterion>Для каждого источника из Приложения 1 проверена актуальность; используются действующие редакции.</criterion>
+     </verification>
      <tags><tag>document-control</tag></tags>
+     <criticalityBasis status="preliminary">Использование устаревшего источника выявляется при пересмотре; последствия локальны.</criticalityBasis>
+     <registry id="TEMP-20261020-048" level="L2" status="draft" version="0.1"/>
     </requirement>
    </clause>
    <referenceList/>
@@ -859,5 +1190,7 @@
   <note id="EN-09" type="inconsistency" target="CL-4.1.1">Названия разделов текстовой части в п. 4.1.1 расходятся с заголовками п. 4.1.3 и 4.1.5: «бизнес-роли и их функции, применяемые информационной системой» / «Бизнес-роли и их функции в информационной системе»; «…взаимодействиями с другими модулями/информационными системами» / «…взаимодействие с другими модулями». Для шаблона ФМ и автоматической проверки нужно одно каноническое название каждого раздела.</note>
   <note id="EN-10" type="wording">Опечатки и согласование (в XML текст сохранен дословно): п. 4.1.1 — «назначения» (вместо «назначение»), «взаимодействиями» (вместо «взаимодействие»); раздел 1, термин «Владелец модуля» — «полное соответствия»; п. 4.1.4 — «с внешним» (пропущено слово или должно быть «с внешними»; в атомарном требовании 4.1.4-05 принято «с внешними»); п. 4.2.1 — строчная буква после точки («2.0. данная»); п. 4.2.2 б) — «между участником процесса» (вместо «участниками»).</note>
   <note id="EN-11" type="formatting" target="S4">В конце раздела 4 шесть пустых заголовков второго уровня, после таблицы п. 3.4.4 — пустой пункт. В XML они не переносились.</note>
+  <note id="EN-12" type="interpretation">Владельцы и классы критичности назначены при приведении требований к формату корпоративного реестра и помечены как предварительные (status="preliminary"); по инструкции оператора их подтверждает владелец требования. Владельцы выбраны из подразделений, названных в метаданных документа: распределение ответственности и жизненный цикл ФМ (п. 3.1.3, 3.3) — владелец процесса C2.4.1, Департамент цифровизации инжиниринга и платформ; состав и содержание ФМ и правила BPMN (раздел 4) — разработчик Методики и менеджер процесса, Отдел цифрового развития процессов; актуальность нормативных ссылок (Приложение 1) — Отдел интегрированной системы менеджмента. Классы: C1 не назначался — невыполнение требований Методики не ведёт к последствиям для безопасности, соответствия законодательству или корпоративно неприемлемым последствиям; C2 — без требования ФМ теряет силу или полноту либо возникает риск ошибок интеграции, ролевой модели и доступа; C3 — снижается качество отдельного раздела или схемы, исправляется новой редакцией ФМ; C4 — рекомендации, влияющие на наглядность. Уровень всех карточек — L2 (ЛНА), статус — «Черновик», рабочие номера TEMP-20261020-NNN; постоянные CR-ID присваивает оператор после проверки карточек.</note>
+  <note id="EN-13" type="question" target="CL-4.2.2">Правила BPMN (п. 4.2.2) по смыслу общие для любых описаний процессов, а не только для ФМ. Если в компании есть единый стандарт моделирования процессов, владельцем этих требований стоит назначить владельца стандарта (вероятно, Отдел интегрированной системы менеджмента), а Методике — ссылаться на него.</note>
  </editorialNotes>
 </ismDocument>

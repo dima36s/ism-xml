@@ -4,7 +4,8 @@
   1. валидация по data/ism-regulation-v1.xsd (включая контроль ссылок xs:key/xs:keyref);
   2. цитата <quote> каждого атомарного требования есть в тексте его пункта;
   3. XSLT-представление data/ism-regulation-view.xsl отрабатывает без ошибок;
-  4. в документе нет атрибутов person (репозиторий публичный, ФИО не публикуются).
+  4. в документе нет атрибутов person (репозиторий публичный, ФИО не публикуются);
+  5. отчёт о комплектности карточек корпоративного реестра (предупреждение, не ошибка).
 
 Запуск: python tools/validate.py [папка]   (по умолчанию data)
 Нужен пакет lxml: pip install lxml
@@ -52,7 +53,27 @@ def check(xml_path, schema, xslt):
     except etree.XSLTError as e:
         errors.append(f"XSLT: {e}")
 
-    print(f"{xml_path.name}: требований {len(reqs)}, ошибок {len(errors)}")
+    # Комплектность карточек корпоративного реестра (как формула «Комплектность» шаблона: B C D E G H I J K L M).
+    # Пока это предупреждение: карточки могут быть в работе у владельцев.
+    incomplete = []
+    for r in reqs:
+        reg = r.find("i:registry", NS)
+        need = {
+            "наименование": r.findtext("i:title", namespaces=NS),
+            "объект": r.find("i:object", NS) is not None or None,
+            "уровень": reg.get("level") if reg is not None else None,
+            "владелец": r.find("i:owner", NS) is not None or None,
+            "критичность": r.get("criticality"),
+            "метод": r.find("i:verification", NS) is not None or None,
+            "критерий приёмки": r.findtext("i:verification/i:criterion", namespaces=NS),
+            "статус": reg.get("status") if reg is not None else None,
+        }
+        miss = [k for k, v in need.items() if not v]
+        if miss:
+            incomplete.append(f"{r.get('id')}: нет {', '.join(miss)}")
+    print(f"{xml_path.name}: требований {len(reqs)}, ошибок {len(errors)}, комплектных карточек реестра {len(reqs) - len(incomplete)} из {len(reqs)}")
+    for w in incomplete[:20]:
+        print("  ! ", w)
     return errors
 
 

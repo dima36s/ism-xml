@@ -17,13 +17,22 @@
    - контроль целостности: xs:key/xs:keyref — ссылка на несуществующую роль, объект, источник,
      пункт или требование теперь является ошибкой валидации;
    - <editorialNotes> — замечания к исходному документу, выявленные при переводе в XML (не нормативны).
+
+  Версия схемы 1.2 — поля корпоративного реестра требований (шаблон пилота V0.1, столбцы A–R):
+   - <title> — наименование карточки; <owner> — владелец требования (роль из <roles>);
+   - @criticality — класс C1–C4 и <criticalityBasis> — обоснование класса;
+   - <verification>/<criterion> — критерий приёмки «выполнено / не выполнено»;
+   - <registry> — карточка реестра: ID (TEMP-… до проверки оператором, затем CR-…), уровень L1–L6,
+     статус карточки, версия, дата вступления, ссылка на подтверждение, примечание.
+  Документы 1.1 остаются допустимыми: новые элементы необязательны. Изменилось одно:
+  @criticality теперь принимает только C1–C4.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
  xmlns:ism="urn:protech:ism:regulation:1.0"
  xmlns="urn:protech:ism:regulation:1.0"
  targetNamespace="urn:protech:ism:regulation:1.0"
  elementFormDefault="qualified"
- version="1.1">
+ version="1.2">
 
  <!-- ===================== Корневой элемент и целостность ссылок ===================== -->
  <xs:element name="ismDocument" type="IsmDocumentType">
@@ -47,6 +56,7 @@
   <xs:keyref name="linkClause" refer="clauseKey"><xs:selector xpath=".//ism:semanticLinks/ism:link"/><xs:field xpath="@clause"/></xs:keyref>
   <xs:keyref name="conditionClause" refer="clauseKey"><xs:selector xpath=".//ism:condition"/><xs:field xpath="@clause"/></xs:keyref>
   <xs:keyref name="audienceClause" refer="clauseKey"><xs:selector xpath=".//ism:scope/ism:audience"/><xs:field xpath="@clause"/></xs:keyref>
+  <xs:keyref name="ownerRole" refer="roleKey"><xs:selector xpath=".//ism:requirement/ism:owner"/><xs:field xpath="@ref"/></xs:keyref>
   <xs:keyref name="noteTarget" refer="linkable"><xs:selector xpath=".//ism:editorialNotes/ism:note"/><xs:field xpath="@target"/></xs:keyref>
  </xs:element>
 
@@ -127,6 +137,47 @@
    <xs:enumeration value="outputOf"/>
    <xs:enumeration value="partOf"/>
    <xs:enumeration value="usedBy"/>
+  </xs:restriction>
+ </xs:simpleType>
+
+ <!-- Справочники корпоративного реестра требований (шаблон пилота V0.1, лист «Справочники») -->
+ <xs:simpleType name="CriticalityEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="C1"/> <!-- критические / корпоративно неприемлемые последствия невыполнения -->
+   <xs:enumeration value="C2"/> <!-- высокие существенные последствия -->
+   <xs:enumeration value="C3"/> <!-- средние локальные управляемые последствия -->
+   <xs:enumeration value="C4"/> <!-- низкие ограниченные обратимые последствия -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="RegistryLevelEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="L1"/> <!-- внешние обязательные НТД и законодательство -->
+   <xs:enumeration value="L2"/> <!-- корпоративные стандарты, ЛНА и техническая политика -->
+   <xs:enumeration value="L3"/> <!-- проектные, площадочные и договорные ограничения -->
+   <xs:enumeration value="L4"/> <!-- неявные требования и допущения -->
+   <xs:enumeration value="L5"/> <!-- границы и интерфейсы -->
+   <xs:enumeration value="L6"/> <!-- явные исключения -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="RegistryStatusEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="draft"/>           <!-- Черновик -->
+   <xs:enumeration value="operator-review"/> <!-- На проверке оператора -->
+   <xs:enumeration value="approval"/>        <!-- На согласовании -->
+   <xs:enumeration value="approved"/>        <!-- Утверждено -->
+   <xs:enumeration value="effective"/>       <!-- Действует -->
+   <xs:enumeration value="revision"/>        <!-- На пересмотре -->
+   <xs:enumeration value="superseded"/>      <!-- Заменено -->
+   <xs:enumeration value="archived"/>        <!-- Архив -->
+  </xs:restriction>
+ </xs:simpleType>
+
+ <xs:simpleType name="AssessmentStatusEnum">
+  <xs:restriction base="xs:string">
+   <xs:enumeration value="preliminary"/> <!-- предложено при разметке, владелец не подтвердил -->
+   <xs:enumeration value="confirmed"/>   <!-- подтверждено владельцем требования -->
   </xs:restriction>
  </xs:simpleType>
 
@@ -298,33 +349,57 @@
 
  <!-- ===================== Атомарное требование ===================== -->
  <xs:complexType name="RequirementType"><xs:sequence>
+  <xs:element name="title" type="xs:string" minOccurs="0"/>             <!-- наименование карточки реестра -->
   <xs:element name="statement" type="xs:string"/>
   <xs:element name="quote" type="xs:string" minOccurs="0"/>             <!-- дословный фрагмент пункта -->
   <xs:element name="subject" type="RefType" minOccurs="0"/>             <!-- кто: роль из <roles> -->
   <xs:element name="action" type="ActionType" minOccurs="0"/>           <!-- что делает -->
   <xs:element name="object" type="RefType" minOccurs="0" maxOccurs="unbounded"/>      <!-- над чем: объект из <objects> -->
   <xs:element name="counterpart" type="RefType" minOccurs="0" maxOccurs="unbounded"/> <!-- с кем: роль из <roles> -->
+  <xs:element name="owner" type="OwnerType" minOccurs="0"/>             <!-- владелец требования: роль из <roles> -->
   <xs:element name="applicability" type="ApplicabilityType" minOccurs="0"/>
   <xs:element name="verification" type="VerificationType" minOccurs="0"/>
   <xs:element name="externalReference" type="RefType" minOccurs="0" maxOccurs="unbounded"/>
   <xs:element name="tags" type="TagsType" minOccurs="0"/>
+  <xs:element name="criticalityBasis" minOccurs="0"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+   <xs:attribute name="status" type="AssessmentStatusEnum" default="preliminary"/>
+  </xs:extension></xs:simpleContent></xs:complexType></xs:element>
+  <xs:element name="registry" type="RegistryCardType" minOccurs="0"/>
  </xs:sequence>
   <xs:attribute name="id" type="xs:ID" use="required"/>
   <xs:attribute name="number" type="xs:string"/>
   <xs:attribute name="modality" type="ModalityEnum" use="required"/>
   <xs:attribute name="modalityBasis" type="ModalityBasisEnum"/>
   <xs:attribute name="kind" type="xs:string"/>
-  <xs:attribute name="criticality" type="xs:string"/>
+  <xs:attribute name="criticality" type="CriticalityEnum"/>
   <xs:attribute name="source" type="SourceEnum"/>
  </xs:complexType>
 
  <xs:complexType name="RefType"><xs:attribute name="ref" type="xs:string" use="required"/></xs:complexType>
+
+ <xs:complexType name="OwnerType">
+  <xs:attribute name="ref" type="xs:string" use="required"/>
+  <xs:attribute name="status" type="AssessmentStatusEnum" default="preliminary"/>
+ </xs:complexType>
+
+ <!-- Карточка корпоративного реестра требований -->
+ <xs:complexType name="RegistryCardType"><xs:sequence>
+  <xs:element name="remark" type="xs:string" minOccurs="0"/> <!-- «Разногласия / примечание» -->
+ </xs:sequence>
+  <xs:attribute name="id" type="xs:string"/>                  <!-- TEMP-ГГГГММДД-NNN до проверки оператором, затем CR-[ДОМЕН]-[ОБЪЕКТ]-[NNNN] -->
+  <xs:attribute name="level" type="RegistryLevelEnum"/>
+  <xs:attribute name="status" type="RegistryStatusEnum"/>
+  <xs:attribute name="version" type="xs:string"/>
+  <xs:attribute name="effective" type="xs:date"/>
+  <xs:attribute name="evidence" type="xs:string"/>            <!-- ссылка на подтверждение -->
+ </xs:complexType>
 
  <xs:complexType name="ActionType"><xs:simpleContent><xs:extension base="xs:string">
   <xs:attribute name="code" type="xs:string" use="required"/>
  </xs:extension></xs:simpleContent></xs:complexType>
 
  <xs:complexType name="VerificationType"><xs:sequence>
+  <xs:element name="criterion" type="xs:string" minOccurs="0"/> <!-- критерий приёмки: когда требование считается выполненным -->
   <!-- Машинная проверка: выражение выбирает нарушения; модель соответствует, если результат пуст.
        В выражениях префикс bpmn = http://www.omg.org/spec/BPMN/20100524/MODEL -->
   <xs:element name="check" minOccurs="0" maxOccurs="unbounded"><xs:complexType><xs:simpleContent><xs:extension base="xs:string">

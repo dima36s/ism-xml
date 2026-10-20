@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ism-regulation-view.xsl  v1.2
-  Human View для документов ИСМ по схеме urn:protech:ism:regulation:1.0 (ism-regulation-v1.xsd 1.1).
+  ism-regulation-view.xsl  v1.3
+  Human View для документов ИСМ по схеме urn:protech:ism:regulation:1.0 (ism-regulation-v1.xsd 1.2).
+  v1.3: поля корпоративного реестра — наименование, владелец, критичность C1–C4, критерий приёмки, карточка реестра.
 
   Страница повторяет структуру исходного документа (Document Layer: пункты с дословным текстом,
   таблицы, рисунки), а под каждым пунктом в свёрнутом блоке показывает его атомарные требования
@@ -65,6 +66,7 @@
  .badge{display:inline-block;padding:2px 7px;border-radius:4px;background:var(--soft2);margin:0 4px 3px 0;font-size:12px;white-space:nowrap}
  .b-shall{background:#dceee3}.b-should{background:#e8eefc}.b-may{background:#eef0f2}.b-shall-not{background:#fbe0dc}
  .b-implicit{background:#fff3d6}.b-verbatim{background:#e6f2ec}
+ .b-C1{background:#a5342e;color:#fff;font-weight:bold}.b-C2{background:#faefd9;color:#8f5b0e;font-weight:bold}.b-C3{background:#e5ebf7;color:#3b5ba5;font-weight:bold}.b-C4{background:#eef0f2;color:#6e8288;font-weight:bold}
  .b-draft{background:#fdf0d5}
  .panel{border:1px solid var(--line);background:var(--soft);padding:10px 16px;margin:16px 0;border-radius:4px}
  .panel.warn{border-color:var(--warn-line);background:var(--warn-bg)}
@@ -364,7 +366,7 @@
 
 <div class="footer">
 Машиночитаемое представление документа ИСМ <xsl:value-of select="$doc/@id"/>, версия <xsl:value-of select="$doc/@version"/>.
-Отображение сформировано из XML посредством XSLT (ism-regulation-view.xsl v1.2); источником истины является XML.
+Отображение сформировано из XML посредством XSLT (ism-regulation-view.xsl v1.3); источником истины является XML.
 </div>
 
 <script>
@@ -493,6 +495,7 @@
   <code><xsl:value-of select="@id"/></code>
   <xsl:if test="@number"> · п. <xsl:value-of select="@number"/></xsl:if>
  </div>
+ <xsl:if test="ism:title"><div class="muted" style="font-size:12.5px"><xsl:value-of select="ism:title"/></div></xsl:if>
  <div class="atom-stmt">
   <xsl:if test="ism:quote"><xsl:attribute name="title">Цитата: «<xsl:value-of select="normalize-space(ism:quote)"/>»</xsl:attribute></xsl:if>
   <xsl:value-of select="ism:statement"/>
@@ -502,7 +505,7 @@
   <xsl:if test="@modalityBasis='implicit'"><span class="badge b-implicit" title="В тексте нет модального глагола; модальность выведена из изъявительного наклонения или перечня">модальность выведена</span></xsl:if>
   <xsl:if test="@source='authoritative'"><span class="badge b-verbatim">дословно</span></xsl:if>
   <xsl:if test="@kind"><span class="badge"><xsl:call-template name="kind-label"><xsl:with-param name="code" select="@kind"/></xsl:call-template></span></xsl:if>
-  <xsl:if test="@criticality"><span class="badge">критичность: <xsl:value-of select="@criticality"/></span></xsl:if>
+  <xsl:if test="@criticality"><span class="badge b-{@criticality}" title="{concat('Критичность ', @criticality)}"><xsl:value-of select="@criticality"/></span></xsl:if>
   <xsl:if test="ism:quote and not(contains(normalize-space(../ism:text), normalize-space(ism:quote)))"><span class="warn">цитата не найдена в тексте пункта</span></xsl:if>
   <xsl:call-template name="flags"/>
  </div>
@@ -513,8 +516,14 @@
    <xsl:for-each select="ism:object"><xsl:call-template name="ref-label"><xsl:with-param name="ref" select="@ref"/></xsl:call-template><xsl:if test="position()!=last()">; </xsl:if></xsl:for-each></dd></xsl:if>
   <xsl:if test="ism:counterpart"><dt>Совместно с</dt><dd>
    <xsl:for-each select="ism:counterpart"><xsl:call-template name="ref-label"><xsl:with-param name="ref" select="@ref"/></xsl:call-template><xsl:if test="position()!=last()">; </xsl:if></xsl:for-each></dd></xsl:if>
+  <xsl:if test="ism:owner"><dt>Владелец</dt><dd><xsl:call-template name="ref-label"><xsl:with-param name="ref" select="ism:owner/@ref"/></xsl:call-template>
+   <xsl:if test="not(ism:owner/@status='confirmed')"> <span class="muted">(предварительно)</span></xsl:if></dd></xsl:if>
+  <xsl:if test="@criticality"><dt>Критичность</dt><dd><strong><xsl:value-of select="@criticality"/></strong>, <xsl:call-template name="criticality-label"><xsl:with-param name="code" select="@criticality"/></xsl:call-template>
+   <xsl:if test="ism:criticalityBasis">. <xsl:value-of select="ism:criticalityBasis"/></xsl:if>
+   <xsl:if test="ism:criticalityBasis and not(ism:criticalityBasis/@status='confirmed')"> <span class="muted">(предварительно)</span></xsl:if></dd></xsl:if>
   <xsl:if test="ism:applicability"><dt>Условие</dt><dd>
    <xsl:for-each select="ism:applicability/ism:condition"><xsl:value-of select="."/><xsl:if test="position()!=last()">; </xsl:if></xsl:for-each></dd></xsl:if>
+  <xsl:if test="ism:verification/ism:criterion"><dt>Критерий приёмки</dt><dd><xsl:value-of select="ism:verification/ism:criterion"/></dd></xsl:if>
   <xsl:if test="ism:verification"><dt>Проверка</dt><dd>
    <xsl:call-template name="verification-label"><xsl:with-param name="code" select="ism:verification/@method"/></xsl:call-template>
    <xsl:for-each select="ism:verification/ism:check">
@@ -525,6 +534,11 @@
   <xsl:if test="//ism:link[@from=$rid or @to=$rid]"><dt>Связи</dt><dd>
    <xsl:for-each select="//ism:link[@from=$rid]"><xsl:call-template name="relation-label"><xsl:with-param name="code" select="@relation"/></xsl:call-template>: <xsl:call-template name="ref-label"><xsl:with-param name="ref" select="@to"/></xsl:call-template><br/></xsl:for-each>
    <xsl:for-each select="//ism:link[@to=$rid]">← <xsl:call-template name="ref-label"><xsl:with-param name="ref" select="@from"/></xsl:call-template> (<xsl:value-of select="@relation"/>)<br/></xsl:for-each></dd></xsl:if>
+  <xsl:if test="ism:registry"><dt>Карточка реестра</dt><dd><code><xsl:value-of select="ism:registry/@id"/></code>
+   <xsl:if test="ism:registry/@level">, уровень <xsl:value-of select="ism:registry/@level"/></xsl:if>
+   <xsl:if test="ism:registry/@status">, <xsl:call-template name="regstatus-label"><xsl:with-param name="code" select="ism:registry/@status"/></xsl:call-template></xsl:if>
+   <xsl:if test="ism:registry/@version">, версия <xsl:value-of select="ism:registry/@version"/></xsl:if>
+   <xsl:if test="ism:registry/ism:remark"><div class="muted"><xsl:value-of select="ism:registry/ism:remark"/></div></xsl:if></dd></xsl:if>
   <xsl:if test="ism:tags"><dt>Теги</dt><dd><xsl:for-each select="ism:tags/ism:tag"><code><xsl:value-of select="."/></code><xsl:text> </xsl:text></xsl:for-each></dd></xsl:if>
  </dl>
 </div>
@@ -602,6 +616,33 @@
   <xsl:when test="$code='document-review'">экспертиза документа</xsl:when>
   <xsl:when test="$code='model-validation'">проверка BPMN-модели</xsl:when>
   <xsl:when test="$code='expert-review'">экспертная оценка</xsl:when>
+  <xsl:when test="$code='record-check'">проверка записей: лист согласования, история изменений</xsl:when>
+  <xsl:otherwise><xsl:value-of select="$code"/></xsl:otherwise>
+ </xsl:choose>
+</xsl:template>
+
+<xsl:template name="criticality-label">
+ <xsl:param name="code"/>
+ <xsl:choose>
+  <xsl:when test="$code='C1'">критические, корпоративно неприемлемые последствия невыполнения</xsl:when>
+  <xsl:when test="$code='C2'">высокие существенные последствия невыполнения</xsl:when>
+  <xsl:when test="$code='C3'">средние локальные управляемые последствия невыполнения</xsl:when>
+  <xsl:when test="$code='C4'">низкие ограниченные обратимые последствия невыполнения</xsl:when>
+  <xsl:otherwise><xsl:value-of select="$code"/></xsl:otherwise>
+ </xsl:choose>
+</xsl:template>
+
+<xsl:template name="regstatus-label">
+ <xsl:param name="code"/>
+ <xsl:choose>
+  <xsl:when test="$code='draft'">черновик</xsl:when>
+  <xsl:when test="$code='operator-review'">на проверке оператора</xsl:when>
+  <xsl:when test="$code='approval'">на согласовании</xsl:when>
+  <xsl:when test="$code='approved'">утверждено</xsl:when>
+  <xsl:when test="$code='effective'">действует</xsl:when>
+  <xsl:when test="$code='revision'">на пересмотре</xsl:when>
+  <xsl:when test="$code='superseded'">заменено</xsl:when>
+  <xsl:when test="$code='archived'">архив</xsl:when>
   <xsl:otherwise><xsl:value-of select="$code"/></xsl:otherwise>
  </xsl:choose>
 </xsl:template>

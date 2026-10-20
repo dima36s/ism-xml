@@ -14,6 +14,15 @@
     bat: 'data/build.bat',
   };
   const JSZIP_URL = 'assets/vendor/jszip.min.js'; // JSZip 3.10.1, MIT; лежит в репозитории, внешних запросов нет
+  const EXCELJS_URL = 'assets/vendor/exceljs.min.js'; // ExcelJS 4.4.0, MIT; загружается только при выгрузке в Excel
+
+  // Корпоративный реестр требований: столбцы A–R шаблона пилота V0.1
+  const REG_HEAD = ['ID', 'Наименование', 'Объект требования', 'Атомарная формулировка', 'Источник / документ', 'Пункт / ссылка', 'Уровень',
+    'Владелец требования', 'Область / условия применения', 'Критичность', 'Метод верификации', 'Критерий приёмки', 'Статус', 'Версия',
+    'Дата вступления', 'Ссылка на подтверждение', 'Разногласия / примечание', 'Комплектность'];
+  const REG_WIDTHS = [18, 24, 13, 48, 34, 20, 12, 25, 36, 13, 27, 32, 23, 10, 15, 31, 34, 17];
+  const REG_REQUIRED = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]; // B C D E G H I J K L M — как в формуле «Комплектность» шаблона
+  const REG_METHOD = { 'document-review': 'Экспертиза документа', 'expert-review': 'Экспертная оценка BPMN-схемы', 'record-check': 'Проверка листа согласования / истории изменений ФМ' };
 
   /* ---------- Утилиты ---------- */
   const $ = (s, r = document) => r.querySelector(s);
@@ -46,7 +55,19 @@
       notation: 'нотация', 'modeling-rule': 'правило моделирования', 'process-rule': 'правило процесса',
       'document-control': 'управление документом', scope: 'область применения',
     },
-    verification: { 'document-review': 'экспертиза документа', 'model-validation': 'проверка BPMN-модели', 'expert-review': 'экспертная оценка' },
+    verification: { 'document-review': 'экспертиза документа', 'model-validation': 'проверка BPMN-модели', 'expert-review': 'экспертная оценка', 'record-check': 'проверка записей: лист согласования, история изменений' },
+    criticality: {
+      C1: 'критические, корпоративно неприемлемые последствия невыполнения', C2: 'высокие существенные последствия невыполнения',
+      C3: 'средние локальные управляемые последствия невыполнения', C4: 'низкие ограниченные обратимые последствия невыполнения',
+    },
+    level: {
+      L1: 'внешние обязательные НТД и законодательство', L2: 'корпоративные стандарты, ЛНА и техническая политика',
+      L3: 'проектные, площадочные и договорные ограничения', L4: 'неявные требования и допущения', L5: 'границы и интерфейсы', L6: 'явные исключения',
+    },
+    regStatus: {
+      draft: 'Черновик', 'operator-review': 'На проверке оператора', approval: 'На согласовании', approved: 'Утверждено',
+      effective: 'Действует', revision: 'На пересмотре', superseded: 'Заменено', archived: 'Архив',
+    },
     relation: {
       constrainedBy: 'ограничивается', references: 'ссылается на', partOf: 'входит в', definedBy: 'определяется',
       usedBy: 'используется', requires: 'требует', implements: 'реализует', supersedes: 'заменяет',
@@ -84,7 +105,9 @@
     openAtoms: new Set(),
     allAtoms: false,
     openRows: new Set(),
-    f: { q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '' },
+    f: { q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '', crit: 'all', owner: '' },
+    rf: { crit: 'all', owner: '', done: 'all', q: '' },
+    openReg: new Set(),
     linkRel: '',
     bpmn: null,
   };
@@ -152,11 +175,21 @@
     const parseReq = (el, clause, section) => {
       const v = kid(el, 'verification');
       const act = kid(el, 'action');
+      const ow = kid(el, 'owner');
+      const cb = kid(el, 'criticalityBasis');
+      const rg = kid(el, 'registry');
       const r = reg({
         kind: 'requirement', id: attr(el, 'id'), number: attr(el, 'number'),
         modality: attr(el, 'modality'), basis: attr(el, 'modalityBasis'), rkind: attr(el, 'kind'),
         criticality: attr(el, 'criticality'), source: attr(el, 'source'),
+        title: txt(kid(el, 'title')),
         statement: txt(kid(el, 'statement')), quote: txt(kid(el, 'quote')),
+        owner: ow ? { ref: attr(ow, 'ref'), status: attr(ow, 'status') || 'preliminary' } : null,
+        critBasis: cb ? { text: txt(cb), status: attr(cb, 'status') || 'preliminary' } : null,
+        registry: rg ? {
+          id: attr(rg, 'id'), level: attr(rg, 'level'), status: attr(rg, 'status'), version: attr(rg, 'version'),
+          effective: attr(rg, 'effective'), evidence: attr(rg, 'evidence'), remark: txt(kid(rg, 'remark')),
+        } : null,
         subject: attr(kid(el, 'subject'), 'ref'),
         action: act ? { code: attr(act, 'code'), label: txt(act) } : null,
         objects: kids(el, 'object').map((o) => attr(o, 'ref')),
@@ -164,6 +197,7 @@
         conditions: kids(kid(el, 'applicability'), 'condition').map(txt),
         verification: v ? {
           method: attr(v, 'method'),
+          criterion: txt(kid(v, 'criterion')),
           checks: kids(v, 'check').map((ch) => ({ language: attr(ch, 'language'), target: attr(ch, 'target'), status: attr(ch, 'status'), expr: norm(ch.textContent) })),
         } : null,
         ext: kids(el, 'externalReference').map((e) => attr(e, 'ref')),
@@ -230,6 +264,7 @@
     const ref = (id, where) => { if (id && !m.byId.has(id)) dangling.push({ id, where }); };
     m.reqs.forEach((r) => {
       ref(r.subject, r.id);
+      if (r.owner) ref(r.owner.ref, r.id);
       r.objects.forEach((o) => ref(o, r.id));
       r.counterparts.forEach((o) => ref(o, r.id));
       r.ext.forEach((o) => ref(o, r.id));
@@ -314,7 +349,8 @@
 
   /* ---------- Требование ---------- */
   function chips(r, { withKind = true, withId = false } = {}) {
-    let h = `<span class="chip ${esc(r.modality)}">${esc(L.modality[r.modality] || r.modality)}</span>`;
+    let h = r.criticality ? `<span class="chip crit ${esc(r.criticality.toLowerCase())}" title="Критичность ${esc(r.criticality)}: ${esc(L.criticality[r.criticality] || '')}">${esc(r.criticality)}</span>` : '';
+    h += `<span class="chip ${esc(r.modality)}">${esc(L.modality[r.modality] || r.modality)}</span>`;
     if (r.basis === 'implicit') h += '<span class="chip implicit" title="В тексте нет слов «должен» или «не допускается»; модальность выведена из формулировки">модальность выведена</span>';
     if (r.source === 'authoritative') h += '<span class="chip verbatim" title="Формулировка совпадает с текстом пункта">дословно</span>';
     if (withKind && r.rkind) h += `<span class="chip kind">${esc(L.kind[r.rkind] || r.rkind)}</span>`;
@@ -327,6 +363,7 @@
     if (r.subject) parts.push(`кто: ${esc(nameOf(r.subject))}`);
     if (r.action) parts.push(`действие: ${esc(r.action.label)}`);
     if (r.objects.length) parts.push(`объект: ${r.objects.map((o) => esc(nameOf(o))).join(', ')}`);
+    if (r.owner) parts.push(`владелец: ${esc(nameOf(r.owner.ref))}`);
     return parts.join('; ');
   }
   function reqMeta(r) {
@@ -335,8 +372,11 @@
     if (r.action) h += `<dt>Действие</dt><dd>${esc(r.action.label)}</dd>`;
     if (r.objects.length) h += `<dt>Объект</dt><dd>${r.objects.map(refLink).join('; ')}</dd>`;
     if (r.counterparts.length) h += `<dt>Совместно с</dt><dd>${r.counterparts.map(refLink).join('; ')}</dd>`;
+    if (r.owner) h += `<dt>Владелец</dt><dd>${refLink(r.owner.ref)}${r.owner.status !== 'confirmed' ? ' <span class="muted">(предварительно)</span>' : ''}</dd>`;
+    if (r.criticality) h += `<dt>Критичность</dt><dd><b>${esc(r.criticality)}</b>, ${esc(L.criticality[r.criticality] || '')}${r.critBasis ? `. ${esc(r.critBasis.text)}` : ''}${r.critBasis && r.critBasis.status !== 'confirmed' ? ' <span class="muted">(предварительно)</span>' : ''}</dd>`;
     if (r.conditions.length) h += `<dt>Условие</dt><dd>${r.conditions.map(esc).join('; ')}</dd>`;
     if (r.verification) {
+      if (r.verification.criterion) h += `<dt>Критерий приёмки</dt><dd>${esc(r.verification.criterion)}</dd>`;
       h += `<dt>Проверка</dt><dd>${esc(L.verification[r.verification.method] || r.verification.method)}`;
       r.verification.checks.forEach((ch) => {
         h += `<details class="xpath"><summary>XPath-проверка по ${esc(ch.target)}${ch.status === 'proposed' ? ', предложена' : ''}</summary><code>${esc(ch.expr)}</code></details>`;
@@ -347,6 +387,10 @@
     const ln = M().links.filter((l) => l.from === r.id || l.to === r.id);
     if (ln.length) h += `<dt>Связи</dt><dd>${ln.map((l) => (l.from === r.id ? `${esc(L.relation[l.relation] || l.relation)}: ${refLink(l.to)}` : `${refLink(l.from)} ${esc(L.relation[l.relation] || l.relation)}`)).join('<br>')}</dd>`;
     if (r.tags.length) h += `<dt>Теги</dt><dd>${r.tags.map((t) => `<code>${esc(t)}</code>`).join(' ')}</dd>`;
+    if (r.registry) {
+      const g = r.registry;
+      h += `<dt>Карточка реестра</dt><dd><span class="req-id">${esc(g.id)}</span>${g.level ? `, уровень ${esc(g.level)}` : ''}${g.status ? `, ${esc((L.regStatus[g.status] || g.status).toLowerCase())}` : ''}${g.version ? `, версия ${esc(g.version)}` : ''}${g.remark ? `<div class="muted">${esc(g.remark)}</div>` : ''}</dd>`;
+    }
     h += `<dt>Идентификатор</dt><dd><span class="req-id">${esc(r.id)}</span></dd>`;
     return h + '</dl>';
   }
@@ -403,6 +447,11 @@
     if (m.reqs.length) {
       h += `<p class="summary">Документ разложен на <a href="#/req">${m.reqs.length} ${plural(m.reqs.length, 'атомарное требование', 'атомарных требования', 'атомарных требований')}</a>.`;
       if (impl) h += ` У <a href="#/req?basis=implicit">${impl}</a> из них модальность выведена из формулировки: в тексте нет слов «должен» или «не допускается».`;
+      if (m.reqs.some((r) => r.registry)) {
+        const done = m.reqs.map(registryRow).filter((x) => x[17] === 'Готово').length;
+        const cc = ['C1', 'C2', 'C3', 'C4'].map((c) => [c, m.reqs.filter((r) => r.criticality === c).length]).filter(([, n]) => n);
+        h += ` В <a href="#/registry">реестре</a> комплектны ${done} ${plural(done, 'карточка', 'карточки', 'карточек')} из ${m.reqs.length}; критичность ${cc.map(([c, n]) => `${c} — ${n}`).join(', ')}.`;
+      }
       if (m.notes.length) h += ` К исходному тексту <a href="#/notes">${m.notes.length} ${plural(m.notes.length, 'замечание', 'замечания', 'замечаний')}</a>.`;
       h += '</p>';
     }
@@ -498,6 +547,8 @@
     return M().reqs.filter((r) => {
       if (f.modality !== 'all' && r.modality !== f.modality) return false;
       if (f.basis !== 'all' && (r.basis || 'explicit') !== f.basis) return false;
+      if (f.crit !== 'all' && r.criticality !== f.crit) return false;
+      if (f.owner && (!r.owner || r.owner.ref !== f.owner)) return false;
       const auto = !!(r.verification && r.verification.checks.length);
       if (f.check === 'auto' && !auto) return false;
       if (f.check === 'manual' && auto) return false;
@@ -506,7 +557,7 @@
       if (f.kind && r.rkind !== f.kind) return false;
       if (f.section && topSection(r.section).id !== f.section) return false;
       if (words.length) {
-        const hay = `${r.statement} ${r.quote} ${r.id} ${reqCite(r)} ${r.tags.join(' ')} ${nameOf(r.subject)} ${r.objects.map(nameOf).join(' ')}`.toLowerCase();
+        const hay = `${r.title} ${r.statement} ${r.quote} ${r.id} ${r.registry ? r.registry.id : ''} ${reqCite(r)} ${r.tags.join(' ')} ${nameOf(r.subject)} ${r.objects.map(nameOf).join(' ')}`.toLowerCase();
         if (!words.every((w) => hay.includes(w))) return false;
       }
       return true;
@@ -519,21 +570,24 @@
     const f = S.f;
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-f="${key}" data-v="${v}" aria-pressed="${f[key] === v}">${t}</button>`).join('')}</div>`;
     const roles = m.roles.filter((r) => m.reqs.some((q) => q.subject === r.id || q.counterparts.includes(r.id)));
+    const owners = m.roles.filter((r) => m.reqs.some((q) => q.owner && q.owner.ref === r.id));
     const objs = m.objects.filter((o) => m.reqs.some((q) => q.objects.includes(o.id)));
     const kinds = [...new Set(m.reqs.map((r) => r.rkind).filter(Boolean))];
     const secs = m.body.filter((s) => m.reqs.some((r) => topSection(r.section) === s));
     const sel = (key, label, items) => `<label class="f-group"><span class="f-label">${label}</span><select data-fsel="${key}"><option value="">все</option>${items.map(([v, t]) => `<option value="${esc(v)}"${f[key] === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
 
-    let h = `<div class="page-head"><div><h1>Атомарные требования</h1><p>Каждое требование ссылается на свой пункт и хранит дословную цитату из него. Отберите нужные фильтрами и выгрузите в Excel.</p></div></div>`;
+    let h = `<div class="page-head"><div><h1>Атомарные требования</h1><p>Каждое требование ссылается на свой пункт и хранит дословную цитату из него. Отберите нужные фильтрами и выгрузите в Excel в формате корпоративного реестра.</p></div></div>`;
     h += `<div class="filters">
       <div class="f-row"><input type="search" id="fq" placeholder="Слова из формулировки, номер пункта или ID" value="${esc(f.q)}" aria-label="Поиск по требованиям"></div>
       <div class="f-row">
         <div class="f-group"><span class="f-label">Модальность</span>${seg('modality', [['all', 'все'], ['shall', 'обязательно'], ['should', 'рекомендуется'], ['shall-not', 'запрещено']])}</div>
         <div class="f-group"><span class="f-label">Основание</span>${seg('basis', [['all', 'все'], ['explicit', 'есть в тексте'], ['implicit', 'выведена']])}</div>
         <div class="f-group"><span class="f-label">Проверка</span>${seg('check', [['all', 'все'], ['auto', 'автоматическая'], ['manual', 'экспертиза']])}</div>
+        ${m.reqs.some((r) => r.criticality) ? `<div class="f-group"><span class="f-label">Критичность</span>${seg('crit', [['all', 'все'], ...['C1', 'C2', 'C3', 'C4'].filter((c) => m.reqs.some((r) => r.criticality === c)).map((c) => [c, c])])}</div>` : ''}
       </div>
       <div class="f-row">
         ${sel('section', 'Раздел', secs.map((s) => [s.id, `${s.skind === 'appendix' ? '' : s.number + '. '}${s.skind === 'appendix' ? s.number + '. ' : ''}${s.title}`]))}
+        ${owners.length ? sel('owner', 'Владелец', owners.map((r) => [r.id, r.name])) : ''}
         ${sel('role', 'Роль', roles.map((r) => [r.id, r.name]))}
         ${sel('object', 'Объект', objs.map((o) => [o.id, o.name]))}
         ${sel('kind', 'Вид', kinds.map((k) => [k, L.kind[k] || k]))}
@@ -558,7 +612,7 @@
         const open = S.openRows.has(r.id);
         h += `<div class="req-row ${esc(r.modality)}${open ? ' open' : ''}" id="row-${esc(r.id)}">
           <div class="where"><a href="#/doc/${esc(r.clause ? r.clause.id : '')}" title="Показать в тексте">${esc(reqCite(r))}</a></div>
-          <div><div class="chips">${chips(r)}</div><div class="req-stmt">${esc(r.statement)}</div>${reqLine(r) ? `<div class="line">${reqLine(r)}</div>` : ''}
+          <div><div class="chips">${chips(r)}</div>${r.title ? `<div class="req-title">${esc(r.title)}</div>` : ''}<div class="req-stmt">${esc(r.statement)}</div>${reqLine(r) ? `<div class="line">${reqLine(r)}</div>` : ''}
             <button type="button" class="link-btn" data-row="${esc(r.id)}" aria-expanded="${open}">${open ? 'Скрыть подробности' : 'Подробнее'}</button></div>
           ${open ? `<div class="more">${r.quote ? `<blockquote class="quote">«${esc(r.quote)}»</blockquote>` : ''}${reqMeta(r)}<div class="req-actions"><button type="button" data-copy="#/req/${esc(r.id)}">Скопировать ссылку</button><a href="#/doc/${esc(r.clause ? r.clause.id : '')}">Показать в тексте</a></div></div>` : ''}
         </div>`;
@@ -566,6 +620,234 @@
       h += '</div>';
     }
     box.innerHTML = h;
+  }
+
+  /* ---------- Корпоративный реестр требований ---------- */
+  function registryRow(r) {
+    const m = M();
+    const g = r.registry || {};
+    const sc = m.scope.conditions[0];
+    const scClause = sc && sc.clause ? m.byId.get(sc.clause) : null;
+    const scope = sc ? sc.text + (scClause && scClause.number ? ` (п. ${scClause.number})` : '') : '';
+    const conds = r.conditions.map((c) => c.charAt(0).toLowerCase() + c.slice(1));
+    const v = r.verification;
+    let method = '';
+    if (v) method = v.method === 'model-validation' ? (v.checks.length ? 'Автоматическая проверка BPMN-схемы (XPath) / экспертиза' : 'Экспертиза BPMN-схемы') : (REG_METHOD[v.method] || v.method);
+    const notes = [];
+    if (g.remark) notes.push(g.remark);
+    if (r.basis === 'implicit') notes.push('Модальность выведена из формулировки: в тексте нет «должен».');
+    if (r.critBasis) notes.push(`Обоснование ${r.criticality}: ${r.critBasis.text}`);
+    if ((r.owner && r.owner.status !== 'confirmed') || (r.critBasis && r.critBasis.status !== 'confirmed')) notes.push('Критичность и владелец — предварительно, подтвердить владельцем.');
+    const row = [
+      g.id || r.id, r.title, r.objects.length ? nameOf(r.objects[0]) : '', r.statement,
+      `${m.id} «${m.meta.title}», версия ${m.version}`, `${reqCite(r)}; ${r.id}`, g.level || '',
+      r.owner ? nameOf(r.owner.ref) : '', [scope, ...conds].filter(Boolean).join('; '), r.criticality || '', method,
+      v ? v.criterion : '', g.status ? L.regStatus[g.status] || g.status : '', g.version || '', g.effective || '', g.evidence || '', notes.join(' '),
+    ];
+    row.push(regComplete(row) ? 'Готово' : 'Заполнить');
+    return row;
+  }
+  const regComplete = (row) => !!row[0] && REG_REQUIRED.every((i) => String(row[i] || '').trim() !== '');
+
+  function filteredRegistry() {
+    const f = S.rf;
+    const words = norm(f.q).toLowerCase().split(' ').filter(Boolean);
+    return M().reqs.filter((r) => {
+      if (f.crit !== 'all' && r.criticality !== f.crit) return false;
+      if (f.owner && (!r.owner || r.owner.ref !== f.owner)) return false;
+      if (f.done !== 'all') { const ok = regComplete(registryRow(r)); if ((f.done === 'ok') !== ok) return false; }
+      if (words.length) { const hay = registryRow(r).join(' ').toLowerCase(); if (!words.every((w) => hay.includes(w))) return false; }
+      return true;
+    });
+  }
+
+  function viewRegistry() {
+    const m = M();
+    const rows = m.reqs.map(registryRow);
+    const done = rows.filter((x) => x[17] === 'Готово').length;
+    const classes = ['C1', 'C2', 'C3', 'C4'];
+    const byCrit = classes.map((c) => [c, m.reqs.filter((r) => r.criticality === c).length]);
+    const noCrit = m.reqs.filter((r) => !r.criticality).length;
+    const owners = m.roles.filter((ro) => m.reqs.some((r) => r.owner && r.owner.ref === ro.id));
+    const prelim = m.reqs.some((r) => (r.owner && r.owner.status !== 'confirmed') || (r.critBasis && r.critBasis.status !== 'confirmed'));
+    const statuses = [...new Set(rows.map((x) => x[12]).filter(Boolean))];
+    const f = S.rf;
+    const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-rf="${key}" data-v="${v}" aria-pressed="${f[key] === v}">${t}</button>`).join('')}</div>`;
+
+    let h = `<div class="page-head"><div><h1>Реестр требований</h1><p>Карточки в формате корпоративного мастер-реестра: одна строка — одно атомарное требование. Столбцы выгрузки A–R совпадают с шаблоном пилота V0.1, поэтому строки можно вставить в мастер-реестр без перестановки.</p></div>
+      <button type="button" class="btn btn-primary" data-dl="xlsx"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Скачать реестр (Excel)</span></button></div>`;
+
+    h += '<section class="reg-summary">';
+    h += `<div class="reg-fact"><span class="lbl">Карточек</span><b>${rows.length}</b></div>`;
+    h += `<div class="reg-fact"><span class="lbl">Комплектных</span><b class="${done === rows.length ? 'ok' : 'bad'}">${done}</b></div>`;
+    h += `<div class="reg-fact"><span class="lbl">Статус</span><b>${statuses.map(esc).join(', ') || '—'}</b></div>`;
+    h += `<div class="reg-crit"><span class="lbl">Критичность</span><div class="crit-bar" role="img" aria-label="${byCrit.map(([c, n]) => `${c}: ${n}`).join(', ')}">${byCrit.filter(([, n]) => n).map(([c, n]) => `<span class="${c.toLowerCase()}" style="flex:${n}" title="${c}: ${n} — ${esc(L.criticality[c])}">${c} ${n}</span>`).join('')}${noCrit ? `<span class="none" style="flex:${noCrit}">без класса ${noCrit}</span>` : ''}</div>
+      <div class="crit-legend">${byCrit.map(([c, n]) => `<span><i class="${c.toLowerCase()}"></i>${c}: ${n}, ${esc(L.criticality[c].replace(' невыполнения', ''))}</span>`).join('')}</div></div>`;
+    h += '</section>';
+
+    if (owners.length) {
+      h += '<div class="reg-owners">';
+      owners.forEach((ro) => {
+        const list = m.reqs.filter((r) => r.owner && r.owner.ref === ro.id);
+        const cc = classes.map((c) => [c, list.filter((r) => r.criticality === c).length]).filter(([, n]) => n);
+        h += `<button type="button" class="owner-pill${f.owner === ro.id ? ' on' : ''}" data-rowner="${esc(ro.id)}" aria-pressed="${f.owner === ro.id}"><b>${esc(ro.name)}</b><span>${list.length} ${plural(list.length, 'карточка', 'карточки', 'карточек')}: ${cc.map(([c, n]) => `${c} ${n}`).join(', ')}</span></button>`;
+      });
+      h += '</div>';
+    }
+    if (prelim) {
+      const en = m.notes.find((n) => /владел/i.test(n.text) && /критичност/i.test(n.text));
+      h += `<p class="prelim">Владельцы и классы критичности назначены предварительно и ждут подтверждения владельцами требований${en ? `, правила назначения — в <a href="#/notes/${esc(en.id)}">замечании ${esc(en.id)}</a>` : ''}. Постоянные CR-ID присваивает оператор реестра после проверки карточек.</p>`;
+    }
+
+    h += `<div class="filters">
+      <div class="f-row"><input type="search" id="rq" placeholder="ID карточки, наименование, слова формулировки" value="${esc(f.q)}" aria-label="Поиск по реестру"></div>
+      <div class="f-row">
+        <div class="f-group"><span class="f-label">Критичность</span>${seg('crit', [['all', 'все'], ...classes.filter((c) => m.reqs.some((r) => r.criticality === c)).map((c) => [c, c])])}</div>
+        <div class="f-group"><span class="f-label">Комплектность</span>${seg('done', [['all', 'все'], ['ok', 'готово'], ['todo', 'заполнить']])}</div>
+      </div></div>`;
+    h += '<div id="regResults"></div>';
+    return h;
+  }
+
+  function renderRegistryResults() {
+    const box = $('#regResults');
+    if (!box) return;
+    const list = filteredRegistry();
+    const total = M().reqs.length;
+    const filtered = list.length !== total;
+    let h = `<div class="result-line"><span>${filtered ? `Найдено ${list.length} из ${total}` : `Всего ${total}`}${filtered ? ' <button type="button" class="link-btn" id="resetRF">Сбросить фильтры</button>' : ''}</span>
+      <button type="button" class="btn btn-sm" data-dl="xlsx-registry"${list.length ? '' : ' disabled'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>${filtered ? 'Скачать найденные (Excel)' : 'Скачать (Excel)'}</button></div>`;
+    if (!list.length) { box.innerHTML = h + '<div class="empty">По этим условиям карточек нет.</div>'; return; }
+    h += '<div class="reg-table"><div class="reg-head" aria-hidden="true"><span>ID карточки</span><span>Наименование и формулировка</span><span>Владелец</span><span>Класс</span><span>Комплектность</span></div>';
+    list.forEach((r) => {
+      const row = registryRow(r);
+      const open = S.openReg.has(r.id);
+      h += `<div class="reg-row${open ? ' open' : ''}" id="reg-${esc(r.id)}">
+        <div class="rid"><span class="req-id">${esc(row[0])}</span><a href="#/doc/${esc(r.clause ? r.clause.id : '')}">${esc(reqCite(r))}</a></div>
+        <div><div class="req-title">${esc(row[1] || 'без наименования')}</div><div class="line">${esc(row[3])}</div>
+          <button type="button" class="link-btn" data-reg="${esc(r.id)}" aria-expanded="${open}">${open ? 'Скрыть карточку' : 'Вся карточка'}</button></div>
+        <div class="owner">${row[7] ? esc(row[7]) : '<span class="bad-ref">не назначен</span>'}</div>
+        <div>${row[9] ? `<span class="chip crit ${esc(row[9].toLowerCase())}" title="${esc(L.criticality[row[9]] || '')}">${esc(row[9])}</span>` : '<span class="bad-ref">—</span>'}</div>
+        <div>${row[17] === 'Готово' ? '<span class="chip shall">Готово</span>' : '<span class="chip shall-not">Заполнить</span>'}</div>
+        ${open ? `<dl class="reg-card">${REG_HEAD.map((t, i) => `<dt><span class="col">${String.fromCharCode(65 + i)}</span>${esc(t)}</dt><dd>${row[i] ? esc(row[i]) : `<span class="muted">${REG_REQUIRED.includes(i) ? 'не заполнено' : '—'}</span>`}</dd>`).join('')}</dl>` : ''}
+      </div>`;
+    });
+    box.innerHTML = h + '</div>';
+  }
+
+  async function exportXlsx(list, fileName) {
+    toast('Готовлю файл Excel…', 6000);
+    if (!window.ExcelJS) await loadScript(EXCELJS_URL);
+    const m = M();
+    const rows = list.map(registryRow);
+    const wb = new window.ExcelJS.Workbook();
+    wb.creator = 'ИСМ XML';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Реестр', { views: [{ state: 'frozen', ySplit: 5 }] });
+    ws.columns = REG_WIDTHS.map((w) => ({ width: w }));
+    const last = 5 + rows.length;
+    const lastV = Math.max(105, last);
+    const arial = (o = {}) => ({ name: 'Arial', size: 9, ...o });
+    const thin = { style: 'thin', color: { argb: 'FFBFBFBF' } };
+    const border = { top: thin, left: thin, bottom: thin, right: thin };
+
+    ws.mergeCells('A1:R1');
+    Object.assign(ws.getCell('A1'), { value: 'КОРПОРАТИВНЫЙ МАСТЕР-РЕЕСТР ТРЕБОВАНИЙ' });
+    ws.getCell('A1').font = arial({ size: 18, bold: true, color: { argb: 'FFFFFFFF' } });
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF17365D' } };
+    ws.getCell('A1').alignment = { vertical: 'middle' };
+    ws.getRow(1).height = 30;
+    ws.mergeCells('A2:R2');
+    const today = new Date().toLocaleDateString('ru-RU');
+    ws.getCell('A2').value = `Одна строка = одна карточка = одно атомарное требование. Выгрузка из ${m.id}, версия ${m.version}, ${today}. Столбцы A–R совпадают с шаблоном пилота V0.1.`;
+    ws.getCell('A2').font = arial({ italic: true, color: { argb: 'FF595959' } });
+    const cnt = (a, b) => rows.filter((x) => x[a] === b).length;
+    const counters = [
+      ['A3', 'Всего карточек', 'C3', `COUNTIF(A6:A${lastV},"<>")`, rows.length],
+      ['D3', 'Комплектных', 'F3', `COUNTIF(R6:R${lastV},"Готово")`, cnt(17, 'Готово')],
+      ['G3', 'Требуют заполнения', 'I3', `COUNTIF(R6:R${lastV},"Заполнить")`, cnt(17, 'Заполнить')],
+      ['J3', 'Действующих', 'L3', `COUNTIF(M6:M${lastV},"Действует")`, cnt(12, 'Действует')],
+    ];
+    counters.forEach(([lc, lt, vc, fx, res]) => {
+      ws.getCell(lc).value = lt; ws.getCell(lc).font = arial({ bold: true });
+      ws.getCell(lc).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+      ws.getCell(vc).value = { formula: fx, result: res }; ws.getCell(vc).font = arial({ bold: true, size: 11 });
+    });
+
+    const head = ws.getRow(5);
+    REG_HEAD.forEach((t, i) => {
+      const c = head.getCell(i + 1);
+      c.value = t;
+      c.font = arial({ bold: true, color: { argb: 'FFFFFFFF' } });
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F75B5' } };
+      c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+      c.border = border;
+    });
+    head.height = 44;
+
+    rows.forEach((row, k) => {
+      const rn = 6 + k;
+      const xr = ws.getRow(rn);
+      let lines = 1;
+      row.forEach((val, i) => {
+        const c = xr.getCell(i + 1);
+        if (i === 17) {
+          c.value = { formula: `IF(A${rn}="","",IF(OR(B${rn}="",C${rn}="",D${rn}="",E${rn}="",G${rn}="",H${rn}="",I${rn}="",J${rn}="",K${rn}="",L${rn}="",M${rn}=""),"Заполнить","Готово"))`, result: val };
+        } else {
+          c.value = val === '' ? null : val;
+          if (val) lines = Math.max(lines, Math.ceil(String(val).length / (REG_WIDTHS[i] * 1.15)));
+        }
+        c.font = arial({ color: { argb: 'FF1F1F1F' } });
+        c.alignment = { wrapText: true, vertical: 'top' };
+        c.border = border;
+      });
+      xr.height = Math.max(36, Math.min(409, lines * 12 + 8));
+    });
+
+    const list1 = (vals) => ({ type: 'list', allowBlank: true, formulae: [`"${vals.join(',')}"`] });
+    ws.dataValidations.add(`G6:G${lastV}`, list1(['L1', 'L2', 'L3', 'L4', 'L5', 'L6']));
+    ws.dataValidations.add(`J6:J${lastV}`, list1(['C1', 'C2', 'C3', 'C4']));
+    ws.dataValidations.add(`M6:M${lastV}`, list1(Object.values(L.regStatus)));
+    const fill = (argb) => ({ type: 'pattern', pattern: 'solid', bgColor: { argb } });
+    ws.addConditionalFormatting({ ref: `J6:J${lastV}`, rules: [
+      { type: 'containsText', operator: 'containsText', text: 'C1', priority: 1, style: { fill: fill('FFFFC7CE'), font: { color: { argb: 'FF9C0006' }, bold: true } } },
+      { type: 'containsText', operator: 'containsText', text: 'C2', priority: 2, style: { fill: fill('FFFCE4D6'), font: { color: { argb: 'FF833C0B' } } } },
+    ] });
+    ws.addConditionalFormatting({ ref: `R6:R${lastV}`, rules: [
+      { type: 'containsText', operator: 'containsText', text: 'Готово', priority: 3, style: { fill: fill('FFC6EFCE'), font: { color: { argb: 'FF006100' } } } },
+      { type: 'containsText', operator: 'containsText', text: 'Заполнить', priority: 4, style: { fill: fill('FFFFEB9C'), font: { color: { argb: 'FF9C5700' } } } },
+    ] });
+    ws.autoFilter = `A5:R${Math.max(last, 6)}`;
+
+    const ref = wb.addWorksheet('Справочники');
+    ref.columns = [{ width: 10 }, { width: 52 }, { width: 4 }, { width: 10 }, { width: 52 }, { width: 4 }, { width: 24 }, { width: 50 }];
+    ref.getCell('A1').value = 'СПРАВОЧНИКИ И ПРАВИЛА КОДИРОВАНИЯ';
+    ref.getCell('A1').font = arial({ size: 14, bold: true });
+    ref.getCell('A2').value = 'Значения соответствуют листу «Справочники» шаблона пилота V0.1. Изменение допустимых значений выполняет оператор реестра.';
+    ref.getCell('A2').font = arial({ italic: true, color: { argb: 'FF595959' } });
+    const hdr = ['Уровень', 'Содержание', '', 'Класс', 'Последствие невыполнения', '', 'Статус карточки', 'Когда используется'];
+    hdr.forEach((t, i) => { if (!t) return; const c = ref.getRow(4).getCell(i + 1); c.value = t; c.font = arial({ bold: true, color: { argb: 'FFFFFFFF' } }); c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F75B5' } }; });
+    const lv = Object.entries(L.level);
+    const cr = [['C1', 'Критические / корпоративно неприемлемые последствия'], ['C2', 'Высокие существенные последствия'], ['C3', 'Средние локальные управляемые последствия'], ['C4', 'Низкие ограниченные обратимые последствия']];
+    const st = [['Черновик', 'Потребность зарегистрирована, карточка заполняется'], ['На проверке оператора', 'Владелец завершил первичное заполнение'], ['На согласовании', 'Карточка направлена участникам'], ['Утверждено', 'Решение принято, готовится публикация'], ['Действует', 'Требование обязательно в установленной области'], ['На пересмотре', 'Действующая версия анализируется; не отменена'], ['Заменено', 'Есть новая версия или новое требование'], ['Архив', 'Не применяется; история и связи сохранены']];
+    for (let i = 0; i < 8; i++) {
+      const r = ref.getRow(5 + i);
+      if (lv[i]) { r.getCell(1).value = lv[i][0]; r.getCell(2).value = lv[i][1].charAt(0).toUpperCase() + lv[i][1].slice(1); }
+      if (cr[i]) { r.getCell(4).value = cr[i][0]; r.getCell(5).value = cr[i][1]; }
+      if (st[i]) { r.getCell(7).value = st[i][0]; r.getCell(8).value = st[i][1]; }
+      r.eachCell((c) => { c.font = arial(); c.alignment = { wrapText: true, vertical: 'top' }; });
+    }
+    const idr = ref.getRow(15);
+    [['A15', 'Правило ID'], ['B15', 'Постоянный: CR-[ДОМЕН]-[ОБЪЕКТ]-[NNNN], присваивает оператор после проверки карточки; рабочий: TEMP-[дата]-[номер]. ID не изменяется и не используется повторно.']]
+      .forEach(([a, t]) => { ref.getCell(a).value = t; ref.getCell(a).font = arial({ bold: a === 'A15' }); ref.getCell(a).alignment = { wrapText: true, vertical: 'top' }; });
+    ref.mergeCells('B15:H15'); idr.height = 28;
+    ref.getCell('A16').value = 'Версия'; ref.getCell('A16').font = arial({ bold: true });
+    ref.getCell('B16').value = '0.x — проект; 1.0 — первая действующая; смысловое изменение — новая версия и повторное решение.'; ref.getCell('B16').font = arial();
+    ref.mergeCells('B16:H16');
+
+    const buf = await wb.xlsx.writeBuffer();
+    saveBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+    toast('Файл Excel готов');
   }
 
   /* ---------- Вид: роли ---------- */
@@ -599,8 +881,13 @@
       const used = m.links.filter((l) => l.to === ro.id && l.relation === 'usedBy');
       const aud = m.scope.audience.filter((a) => a.ref === ro.id);
       const def = m.links.filter((l) => l.from === ro.id && l.relation === 'definedBy').map((l) => m.byId.get(l.to)).filter(Boolean);
+      const owns = m.reqs.filter((r) => r.owner && r.owner.ref === ro.id);
       h += `<div class="card" id="${esc(ro.id)}"><h3>${esc(ro.name)}</h3>
         <p class="alias">${esc(L.roleType[ro.type] || ro.type || '')}${ro.aliases.length ? `${ro.type ? '. ' : ''}В тексте: ${ro.aliases.map(esc).join('; ')}` : ''}</p>`;
+      if (owns.length) {
+        const cc = ['C1', 'C2', 'C3', 'C4'].map((c) => [c, owns.filter((r) => r.criticality === c).length]).filter(([, n]) => n);
+        h += `<p style="margin:0 0 6px"><b>Владелец ${owns.length} ${plural(owns.length, 'требования', 'требований', 'требований')}</b> (${cc.map(([c, n]) => `${c}: ${n}`).join(', ')}). <a href="#/registry?owner=${esc(ro.id)}">Открыть в реестре</a></p>`;
+      }
       if (own.length) h += `<ul>${own.map((r) => `<li>${esc(r.action ? r.action.label : r.statement)}${r.objects.length ? `: ${r.objects.map((o) => esc(nameOf(o))).join(', ')}` : ''} <a href="#/req/${esc(r.id)}">${esc(reqCite(r))}</a></li>`).join('')}</ul>`;
       const extra = [];
       with_.forEach((r) => extra.push(`сторона согласования: ${r.objects.map((o) => esc(nameOf(o))).join(', ')} (${refLink(r.id)})`));
@@ -608,7 +895,7 @@
       aud.forEach((a) => extra.push(`руководствуется документом${a.clause ? ` (${refLink(a.clause)})` : ''}`));
       if (extra.length) h += `<ul>${extra.map((x) => `<li>${x}</li>`).join('')}</ul>`;
       def.forEach((t) => { h += `<p class="muted" style="margin:8px 0 0">Определение из раздела терминов: ${esc(t.def)}</p>`; });
-      if (!own.length && !extra.length && !def.length) h += '<p class="muted">В требованиях не участвует.</p>';
+      if (!own.length && !extra.length && !def.length && !owns.length) h += '<p class="muted">В требованиях не участвует.</p>';
       h += '</div>';
     });
     return h + '</div></section>';
@@ -767,6 +1054,7 @@
     const tabs = [
       ['doc', 'Документ', ''],
       ['req', 'Требования', m.reqs.length],
+      ['registry', 'Реестр', m.reqs.length],
       ['roles', 'Роли', m.roles.length],
       ['objects', 'Объекты', m.objects.length],
       ['links', 'Связи', m.links.length],
@@ -781,7 +1069,7 @@
     const m = M();
     searchIndex = [];
     m.clauses.forEach((c) => { if (c.text) searchIndex.push({ g: 'Пункты', t: cite(c), body: c.text, href: `#/doc/${c.id}` }); });
-    m.reqs.forEach((r) => searchIndex.push({ g: 'Требования', t: `${reqCite(r)}: ${r.statement}`, body: `${r.statement} ${r.quote} ${r.id}`, href: `#/req/${r.id}` }));
+    m.reqs.forEach((r) => searchIndex.push({ g: 'Требования', t: `${reqCite(r)}: ${r.title || r.statement}`, body: `${r.title} ${r.statement} ${r.quote} ${r.id} ${r.registry ? r.registry.id : ''}`, href: `#/req/${r.id}` }));
     m.terms.forEach((t) => searchIndex.push({ g: 'Термины', t: t.name + (t.abbr ? ` (${t.abbr})` : ''), body: `${t.name} ${t.abbr} ${t.def}`, href: `#/doc/${t.id}` }));
     m.roles.forEach((r) => searchIndex.push({ g: 'Роли и объекты', t: r.name, body: `${r.name} ${r.aliases.join(' ')}`, href: `#/roles/${r.id}` }));
     m.objects.forEach((o) => searchIndex.push({ g: 'Роли и объекты', t: o.name, body: `${o.name} ${o.aliases.join(' ')} ${o.description} ${o.codes.map((c) => c.code).join(' ')}`, href: `#/objects/${o.id}` }));
@@ -824,12 +1112,16 @@
   function render() {
     if (!S.m) return;
     const { view, id, params } = parseHash();
-    const views = { doc: viewDoc, req: viewReqs, roles: viewRoles, objects: viewObjects, links: viewLinks, check: viewCheck, notes: viewNotes };
+    const views = { doc: viewDoc, req: viewReqs, registry: viewRegistry, roles: viewRoles, objects: viewObjects, links: viewLinks, check: viewCheck, notes: viewNotes };
     const v = views[view] ? view : 'doc';
     if (v === 'req') {
-      ['modality', 'basis', 'check', 'role', 'object', 'kind', 'section'].forEach((k) => { if (params.has(k)) S.f[k] = params.get(k); });
+      ['modality', 'basis', 'check', 'role', 'object', 'kind', 'section', 'crit', 'owner'].forEach((k) => { if (params.has(k)) S.f[k] = params.get(k); });
       if (params.has('q')) S.f.q = params.get('q');
       if (id) S.openRows.add(id);
+    }
+    if (v === 'registry') {
+      ['crit', 'owner', 'done', 'q'].forEach((k) => { if (params.has(k)) S.rf[k] = params.get(k); });
+      if (id) S.openReg.add(id);
     }
     if (v === 'doc' && id) {
       const o = S.m.byId.get(id);
@@ -840,10 +1132,11 @@
     el.innerHTML = views[v]();
     el.className = 'view' + (v === 'doc' ? '' : ' wide');
     if (v === 'req') renderReqResults();
+    if (v === 'registry') renderRegistryResults();
     document.title = `${S.m.id} — ${S.m.meta.title}`;
     closeNav();
 
-    const targetId = v === 'req' && id ? `row-${id}` : id;
+    const targetId = v === 'req' && id ? `row-${id}` : v === 'registry' && id ? `reg-${id}` : id;
     if (targetId) {
       const t = document.getElementById(targetId);
       if (t) {
@@ -890,18 +1183,6 @@
     if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
     return r.text();
   }
-  function csv(list) {
-    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['ID', 'Пункт', 'Модальность', 'Основание модальности', 'Вид', 'Формулировка', 'Цитата из документа', 'Кто', 'Действие', 'Объект', 'Совместно с', 'Условие', 'Проверка', 'Машинная проверка'];
-    const rows = list.map((r) => [
-      r.id, reqCite(r), L.modality[r.modality] || r.modality, r.basis === 'implicit' ? 'выведена' : 'есть в тексте',
-      L.kind[r.rkind] || r.rkind, r.statement, r.quote, r.subject ? nameOf(r.subject) : '', r.action ? r.action.label : '',
-      r.objects.map(nameOf).join('; '), r.counterparts.map(nameOf).join('; '), r.conditions.join('; '),
-      r.verification ? L.verification[r.verification.method] || r.verification.method : '',
-      r.verification && r.verification.checks.length ? 'да' : '',
-    ]);
-    return '﻿' + [head, ...rows].map((r) => r.map(cell).join(';')).join('\r\n');
-  }
   function loadScript(src) {
     return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('не удалось загрузить ' + src)); document.head.appendChild(s); });
   }
@@ -910,8 +1191,9 @@
       if (kind === 'xml') return saveBlob(new Blob([S.xmlText], { type: 'application/xml' }), S.xmlName);
       if (kind === 'xsd') return saveBlob(new Blob([await fetchText(KIT.xsd)], { type: 'application/xml' }), 'ism-regulation-v1.xsd');
       if (kind === 'xsl') return saveBlob(new Blob([await fetchText(KIT.xsl)], { type: 'application/xml' }), 'ism-regulation-view.xsl');
-      if (kind === 'csv') return saveBlob(new Blob([csv(M().reqs)], { type: 'text/csv;charset=utf-8' }), `${M().id}-требования.csv`);
-      if (kind === 'csv-filtered') return saveBlob(new Blob([csv(filteredReqs())], { type: 'text/csv;charset=utf-8' }), `${M().id}-требования-выборка.csv`);
+      if (kind === 'xlsx') return await exportXlsx(M().reqs, `${M().id} — реестр требований.xlsx`);
+      if (kind === 'xlsx-filtered') return await exportXlsx(filteredReqs(), `${M().id} — реестр требований (выборка).xlsx`);
+      if (kind === 'xlsx-registry') return await exportXlsx(filteredRegistry(), `${M().id} — реестр требований${filteredRegistry().length !== M().reqs.length ? ' (выборка)' : ''}.xlsx`);
       if (kind === 'zip') {
         toast('Собираю архив…');
         if (!window.JSZip) await loadScript(JSZIP_URL);
@@ -997,13 +1279,41 @@
         return;
       }
       if (t.closest('#resetF')) {
-        S.f = { q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '' };
+        S.f = { q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '', crit: 'all', owner: '' };
         if (location.hash.includes('?')) location.hash = '#/req'; else render();
         return;
       }
-      if (t.closest('#csvFiltered')) { download('csv-filtered'); return; }
+      if (t.closest('#csvFiltered')) { download('xlsx-filtered'); return; }
       const dl = t.closest('[data-dl]');
       if (dl) { $('#downloadMenu').open = false; download(dl.dataset.dl); return; }
+      const rfb = t.closest('[data-rf]');
+      if (rfb) {
+        S.rf[rfb.dataset.rf] = rfb.dataset.v;
+        $$(`[data-rf="${rfb.dataset.rf}"]`).forEach((b) => b.setAttribute('aria-pressed', String(b === rfb)));
+        renderRegistryResults();
+        return;
+      }
+      const ob = t.closest('[data-rowner]');
+      if (ob) {
+        S.rf.owner = S.rf.owner === ob.dataset.rowner ? '' : ob.dataset.rowner;
+        $$('[data-rowner]').forEach((b) => { const on = b.dataset.rowner === S.rf.owner; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+        renderRegistryResults();
+        return;
+      }
+      const rg = t.closest('[data-reg]');
+      if (rg) {
+        const id = rg.dataset.reg;
+        if (S.openReg.has(id)) S.openReg.delete(id); else S.openReg.add(id);
+        renderRegistryResults();
+        const r = document.getElementById('reg-' + id);
+        if (r) r.querySelector('[data-reg]').focus();
+        return;
+      }
+      if (t.closest('#resetRF')) {
+        S.rf = { crit: 'all', owner: '', done: 'all', q: '' };
+        if (location.hash.includes('?')) location.hash = '#/registry'; else render();
+        return;
+      }
       const sample = t.closest('[data-sample]');
       if (sample) {
         fetchText(sample.dataset.sample).then((x) => { S.bpmn = runBpmn(x, sample.dataset.sample.split('/').pop()); $('#checkRes').innerHTML = bpmnResults(S.bpmn); $('#checkRes').scrollIntoView({ block: 'nearest' }); })
@@ -1035,6 +1345,7 @@
 
     document.addEventListener('input', (e) => {
       if (e.target.id === 'fq') { S.f.q = e.target.value; renderReqResults(); }
+      if (e.target.id === 'rq') { S.rf.q = e.target.value; renderRegistryResults(); }
       if (e.target.id === 'searchInput') doSearch(e.target.value);
     });
     document.addEventListener('change', (e) => {
@@ -1092,7 +1403,7 @@
   function setModel(text, name, url, custom) {
     S.m = parseModel(text, url);
     S.xmlText = text; S.xmlName = name; S.xmlUrl = url; S.custom = custom;
-    S.openAtoms.clear(); S.openRows.clear(); S.bpmn = null;
+    S.openAtoms.clear(); S.openRows.clear(); S.openReg.clear(); S.bpmn = null;
     $('#brandDoc').textContent = `${S.m.id}, версия ${S.m.version}`;
     $('#dlXmlName').textContent = name;
     const b = $('#banner');
