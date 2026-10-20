@@ -26,13 +26,16 @@
      статус карточки, версия, дата вступления, ссылка на подтверждение, примечание.
   Документы 1.1 остаются допустимыми: новые элементы необязательны. Изменилось одно:
   @criticality теперь принимает только C1–C4.
+
+  Версия схемы 1.3 — карточки, загруженные из Excel-реестра: у <registry> необязательные
+  @sourceDocument и @sourceClause (источник и пункт карточки, если он отличается от самого документа).
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
  xmlns:ism="urn:protech:ism:regulation:1.0"
  xmlns="urn:protech:ism:regulation:1.0"
  targetNamespace="urn:protech:ism:regulation:1.0"
  elementFormDefault="qualified"
- version="1.2">
+ version="1.3">
 
  <!-- ===================== Корневой элемент и целостность ссылок ===================== -->
  <xs:element name="ismDocument" type="IsmDocumentType">
@@ -392,6 +395,8 @@
   <xs:attribute name="version" type="xs:string"/>
   <xs:attribute name="effective" type="xs:date"/>
   <xs:attribute name="evidence" type="xs:string"/>            <!-- ссылка на подтверждение -->
+  <xs:attribute name="sourceDocument" type="xs:string"/>      <!-- «Источник / документ», если не этот документ -->
+  <xs:attribute name="sourceClause" type="xs:string"/>        <!-- «Пункт / ссылка» в источнике -->
  </xs:complexType>
 
  <xs:complexType name="ActionType"><xs:simpleContent><xs:extension base="xs:string">
