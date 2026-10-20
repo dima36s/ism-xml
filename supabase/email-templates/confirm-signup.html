@@ -1,0 +1,8 @@
+<!-- Supabase → Authentication → Emails → Confirm signup. Тема письма: Код подтверждения ИСМ XML -->
+<div style="font-family: Arial, Helvetica, sans-serif; max-width: 520px; margin: 0 auto; color: #15262D;">
+  <h2 style="font-size: 20px; margin: 0 0 12px;">Подтвердите почту в ИСМ XML</h2>
+  <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.5;">Введите этот код в окне регистрации приложения:</p>
+  <p style="font-size: 32px; letter-spacing: 6px; font-weight: bold; font-family: 'Courier New', monospace; margin: 0 0 16px; padding: 12px 16px; border: 2px solid #1F3640; display: inline-block;">{{ .Token }}</p>
+  <p style="margin: 0 0 8px; font-size: 14px; color: #44575E;">Код действует ограниченное время. Если вы не регистрировались в ИСМ XML, просто удалите это письмо.</p>
+  <p style="margin: 16px 0 0; font-size: 12px; color: #6E8288;">Письмо отправлено на {{ .Email }}</p>
+</div>

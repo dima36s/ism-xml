@@ -56,6 +56,14 @@
       return v ? v.value : fallback;
     },
     async setMeta(key, value) { return tx('meta', 'readwrite', (os, mem) => (mem ? mem.set(key, { key, value }) : wrap(os.put({ key, value })))); },
+    // Связи между требованиями разных документов
+    async allLinks() { return (await store.getMeta('links', [])) || []; },
+    async addLink(l) { const list = await store.allLinks(); list.push(l); return store.setMeta('links', list); },
+    async removeLink(l) {
+      const list = (await store.allLinks()).filter((x) => !(x.from === l.from && x.to === l.to && x.relation === l.relation));
+      return store.setMeta('links', list);
+    },
+    mode: 'local',
   };
 
   window.ISM = window.ISM || {};

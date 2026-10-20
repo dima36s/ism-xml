@@ -22,10 +22,19 @@
   // Корпоративный реестр требований: столбцы A–R шаблона пилота V0.1
   const REG_HEAD = ['ID', 'Наименование', 'Объект требования', 'Атомарная формулировка', 'Источник / документ', 'Пункт / ссылка', 'Уровень',
     'Владелец требования', 'Область / условия применения', 'Критичность', 'Метод верификации', 'Критерий приёмки', 'Статус', 'Версия',
-    'Дата вступления', 'Ссылка на подтверждение', 'Разногласия / примечание', 'Комплектность'];
-  const REG_WIDTHS = [18, 24, 13, 48, 34, 20, 12, 25, 36, 13, 27, 32, 23, 10, 15, 31, 34, 17];
+    'Дата вступления', 'Ссылка на подтверждение', 'Разногласия / примечание', 'Комплектность',
+    'Тип требования', 'Основание (вышестоящее требование)']; // S и T — дополнительные столбцы приложения
+  const REG_WIDTHS = [18, 24, 13, 48, 34, 20, 12, 25, 36, 13, 27, 32, 23, 10, 15, 31, 34, 17, 20, 38];
   const REG_REQUIRED = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]; // B C D E G H I J K L M — как в формуле «Комплектность» шаблона
   const REG_METHOD = { 'document-review': 'Экспертиза документа', 'expert-review': 'Экспертная оценка BPMN-схемы', 'record-check': 'Проверка листа согласования / истории изменений ФМ' };
+  const CAT = { business: 'Бизнес-требование', system: 'Системное требование' };
+  const CAT_SHORT = { business: 'бизнес', system: 'системное' };
+  // Виды и уровни документов ИСМ — справочник из convert.js (та же таблица, что в базе данных)
+  const typeList = () => window.ISM.convert.DOC_TYPE_LIST;
+  const typeByCode = (c) => typeList().find((t) => t.code === c) || null;
+  const levelInfo = (lvl) => window.ISM.convert.DOC_LEVELS.find((l) => l.level === lvl) || null;
+  const levelLabel = (lvl) => (lvl ? `${lvl} уровень` : 'Внешняя документация');
+  const levelOf = (m) => (m && m.type ? m.type.level : undefined);
   const METHOD_HINTS = ['Экспертиза документа', 'Экспертная оценка', 'Проверка записей', 'Аудит', 'Испытания', 'Расчёт', 'Измерение', 'Осмотр', 'Анализ отчётности'];
 
   /* ---------- Утилиты ---------- */
@@ -61,6 +70,7 @@
     docs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5"/></svg>',
     reg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M4 14.5h16M9 5v14"/></svg>',
     ov: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5"/></svg>',
+    graph: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="5"/><rect x="3" y="16" width="6" height="5"/><rect x="15" y="16" width="6" height="5"/><path d="M12 8v4M6 16v-4h12v4"/></svg>',
     edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></svg>',
     plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
     chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>',
@@ -125,14 +135,17 @@
     models: new Map(),     // key → разобранная модель (кэш)
     version: 0,            // растёт при любом изменении документов; по нему сбрасываются кэши
     dismissed: new Set(),  // пары «не дубль»
+    links: [],             // связи между требованиями разных документов: {from, to, relation}; from/to — «ключ документа|id требования»
     tempSeq: {},           // {ГГГГММДД: следующий номер TEMP}
     ov: null,              // кэш пересечений
     storage: true,
+    cloud: false,          // вход и база данных Supabase включены (assets/config.js)
+    user: null,            // текущий пользователь Supabase Auth
     builtinUrl: '',
   };
-  const freshF = () => ({ q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '', crit: 'all', owner: '' });
-  const freshRF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all' });
-  const freshCF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all', doc: '' });
+  const freshF = () => ({ q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '', crit: 'all', owner: '', cat: 'all' });
+  const freshRF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all', cat: 'all' });
+  const freshCF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all', doc: '', cat: 'all', level: '' });
   // Текущий документ и состояние интерфейса
   const S = {
     key: '',
@@ -184,6 +197,9 @@
       methodologist: party(kid(md, 'methodologist')),
     };
 
+    m.typeCode = window.ISM.convert.typeOf(m.meta.docTypeCode, m.meta.docType, m.meta.title);
+    m.type = typeByCode(m.typeCode);
+
     const sc = kid(root, 'scope');
     m.scope = {
       conditions: kids(kid(sc, 'applicability'), 'condition').map((c) => ({ text: txt(c), clause: attr(c, 'clause') })),
@@ -223,6 +239,7 @@
         kind: 'requirement', id: attr(el, 'id'), number: attr(el, 'number'),
         modality: attr(el, 'modality'), basis: attr(el, 'modalityBasis'), rkind: attr(el, 'kind'),
         criticality: attr(el, 'criticality'), source: attr(el, 'source'),
+        category: attr(el, 'category'), categoryStatus: attr(el, 'categoryStatus') || 'preliminary',
         title: txt(kid(el, 'title')),
         statement: txt(kid(el, 'statement')), quote: txt(kid(el, 'quote')),
         owner: ow ? { ref: attr(ow, 'ref'), status: attr(ow, 'status') || 'preliminary' } : null,
@@ -246,6 +263,7 @@
         tags: kids(kid(el, 'tags'), 'tag').map(txt),
         clause, section, m,
       });
+      if (!r.category) { r.category = window.ISM.convert.categoryOf(r.statement); r.catAuto = true; }
       m.reqs.push(r);
       return r;
     };
@@ -318,7 +336,7 @@
   }
 
   /* ---------- Рабочее пространство ---------- */
-  const store = () => window.ISM.store;
+  const store = () => (W.cloud ? window.ISM.cloud.store : window.ISM.store);
   const entry = (key) => W.docs.find((d) => d.key === key) || null;
   function modelOf(e) {
     if (!e) return null;
@@ -343,19 +361,57 @@
   }
   function bump() { W.version++; W.ov = null; }
 
+  // Связи между требованиями (основания) — хранятся отдельно от XML, потому что связывают разные документы
+  const sameLink = (a, b) => a.from === b.from && a.to === b.to && a.relation === b.relation;
+  const linksOf = (r) => { const k = uk(r); return W.links.filter((l) => l.from === k || l.to === k); };
+  async function addLink(l) {
+    if (l.from === l.to || W.links.some((x) => sameLink(x, l))) return;
+    const rec = { from: l.from, to: l.to, relation: l.relation || 'derives' };
+    W.links.push(rec);
+    try { await store().addLink(rec); } catch (err) { toast('Связь не сохранилась: ' + err.message, 5000); }
+    W.version++;
+  }
+  async function removeLink(l) {
+    const before = W.links.length;
+    W.links = W.links.filter((x) => !sameLink(x, l));
+    if (W.links.length !== before) { try { await store().removeLink(l); } catch (err) { toast('Связь не удалилась: ' + err.message, 5000); } W.version++; }
+  }
+
   async function persist(e) {
     if (!W.storage) return;
     const rec = e.builtin
       ? { key: e.key, builtin: true, included: e.included, overridden: !!e.overridden, xml: e.overridden ? e.xml : null, addedAt: 0 }
       : { key: e.key, name: e.name, kind: e.kind, xml: e.xml, addedAt: e.addedAt, included: e.included, report: e.report, level: e.level };
-    try { await store().putDoc(rec); } catch (err) { toast('Не удалось сохранить в браузере: ' + err.message, 5000); }
+    try { await store().putDoc(rec, syncPayload(e)); } catch (err) { toast(`Не удалось сохранить ${store().mode === 'cloud' ? 'в базе' : 'в браузере'}: ${err.message}`, 6000); }
+  }
+  // Строки для базы данных: документ и его требования (таблицы documents и requirements)
+  function syncPayload(e) {
+    const m = modelOf(e);
+    return {
+      doc: {
+        key: e.key, type_code: m ? m.typeCode : '', ism_id: m ? m.id : '', title: m ? docTitle(m) : e.name, version: m ? m.version : '', status: m ? m.status : '',
+        source_kind: e.kind, file_name: e.builtin ? null : e.name, xml: e.builtin && !e.overridden ? null : e.xml,
+        included: e.included, overridden: !!e.overridden, report: e.report || {}, added_at: new Date(e.addedAt || Date.now()).toISOString(),
+      },
+      reqs: m ? m.reqs.map((r) => {
+        const row = registryRow(r);
+        const g = r.registry || {};
+        return {
+          req_id: r.id, clause_id: r.clause ? r.clause.id : '', clause_cite: reqCite(r), card_id: g.id || '', title: r.title, statement: r.statement, quote: r.quote,
+          modality: r.modality, category: r.category, category_status: r.catAuto ? 'preliminary' : r.categoryStatus, criticality: r.criticality,
+          owner_name: row[7], object_name: row[2], conditions: r.conditions.join('; '), verification_method: row[10], acceptance_criterion: row[11],
+          reg_level: g.level || '', reg_status: g.status || '', reg_version: g.version || '', effective_date: g.effective || '', evidence: g.evidence || '', remark: g.remark || '',
+          complete: row[17] === 'Готово',
+        };
+      }) : null,
+    };
   }
   const saveMeta = (k, v) => { if (W.storage) store().setMeta(k, v).catch(() => {}); };
 
   async function initWorkspace() {
     W.storage = await store().available();
     let saved = [];
-    try { saved = await store().allDocs(); } catch { saved = []; }
+    try { saved = await store().allDocs(); } catch (err) { saved = []; W.loadError = err.message; }
     W.builtinUrl = new URL(DEFAULT_XML, location.href).href;
     let text = '';
     try { text = await fetchText(W.builtinUrl); } catch (e) { W.builtinError = e.message; }
@@ -366,10 +422,13 @@
     saved.filter((d) => d.key !== BUILTIN && d.xml).sort((a, z) => a.addedAt - z.addedAt).forEach((d) => W.docs.push({ ...d, included: d.included !== false }));
     try {
       W.dismissed = new Set(await store().getMeta('dismissed', []));
+      W.links = await store().allLinks();
       W.tempSeq = await store().getMeta('tempSeq', {});
       S.key = await store().getMeta('current', BUILTIN);
     } catch { S.key = BUILTIN; }
     if (!entry(S.key)) S.key = W.docs[0] ? W.docs[0].key : '';
+    // В базе у каждого пользователя есть строка опубликованного регламента: на неё ссылаются связи и реестр
+    if (W.cloud && !W.loadError && !saved.some((d) => d.key === BUILTIN) && entry(BUILTIN)) await persist(entry(BUILTIN));
     W.ready = true;
   }
 
@@ -504,6 +563,7 @@
   function chips(r, { withKind = true, withId = false } = {}) {
     let h = r.criticality ? `<span class="chip crit ${esc(r.criticality.toLowerCase())}" title="Критичность ${esc(r.criticality)}: ${esc(L.criticality[r.criticality] || '')}">${esc(r.criticality)}</span>` : '';
     h += `<span class="chip ${esc(r.modality)}">${esc(L.modality[r.modality] || r.modality)}</span>`;
+    h += catChip(r);
     if (r.basis === 'implicit') h += '<span class="chip implicit" title="В тексте нет слов «должен» или «не допускается»; модальность выведена из формулировки">модальность выведена</span>';
     if (r.source === 'authoritative') h += '<span class="chip verbatim" title="Формулировка совпадает с текстом пункта">дословно</span>';
     if (withKind && r.rkind) h += `<span class="chip kind">${esc(L.kind[r.rkind] || r.rkind)}</span>`;
@@ -511,6 +571,10 @@
     h += ovBadge(r);
     if (withId) h += `<span class="req-id">${esc(r.id)}</span>`;
     return h;
+  }
+  function catChip(r) {
+    const sure = !r.catAuto && r.categoryStatus === 'confirmed';
+    return `<span class="chip cat ${esc(r.category)}${sure ? '' : ' auto'}" title="${esc(CAT[r.category])}${sure ? ', подтверждено' : ': определено автоматически по формулировке, проверьте в карточке'}">${esc(CAT_SHORT[r.category])}</span>`;
   }
   function reqLine(r) {
     const parts = [];
@@ -594,7 +658,7 @@
     h += '</div>';
     h += `<div class="stamp-main">
         <div class="code"><span class="lbl">Обозначение</span>${esc(m.id)}</div>
-        <div class="cell" style="grid-column: span 2"><span class="lbl">Вид документа</span><span class="val">${esc(meta.docType)}${meta.docTypeCode ? ` <span class="muted">${esc(meta.docTypeCode)}</span>` : ''}</span></div>
+        <div class="cell" style="grid-column: span 2"><span class="lbl">Вид документа</span><span class="val">${esc(m.type ? m.type.name : meta.docType)}${m.typeCode || meta.docTypeCode ? ` <span class="muted">${esc(m.typeCode || meta.docTypeCode)}</span>` : ''}</span>${m.type ? `<span class="lvl-note">${m.type.level ? `${m.type.level} уровень — ${esc(levelInfo(m.type.level).purpose)}` : 'внешняя документация'}</span>` : ''}</div>
         <div class="cell"><span class="lbl">Процесс</span><span class="val">${esc(meta.processRef.id) || '—'}</span></div>
         <div class="cell"><span class="lbl">Статус</span><span class="val ${statusCls}">${esc(L.status[m.status] || m.status)}</span></div>
         <div class="cell"><span class="lbl">Версия</span><span class="val">${esc(m.version)}</span></div>
@@ -629,6 +693,7 @@
     h += '<div class="read doc-tools">';
     if (m.reqs.length) h += `<button type="button" class="btn btn-sm" id="toggleAll">${S.allAtoms ? 'Свернуть требования в тексте' : 'Показать все требования в тексте'}</button>`;
     h += `<button type="button" class="btn btn-sm${S.markup ? ' on' : ''}" id="toggleMarkup" aria-pressed="${S.markup}">${ICON.plus}${S.markup ? 'Закончить разметку' : 'Разметка: добавить требование'}</button>`;
+    h += `<a class="btn btn-sm" href="#/graph?doc=${esc(m.key)}">${ICON.graph}На графе требований</a>`;
     if (S.markup) h += '<span class="muted">У каждого пункта появилась кнопка «Требование». Формулировку и цитату можно поправить в карточке.</span>';
     h += '</div>';
 
@@ -725,6 +790,7 @@
     const words = norm(f.q).toLowerCase().split(' ').filter(Boolean);
     return M().reqs.filter((r) => {
       if (f.modality !== 'all' && r.modality !== f.modality) return false;
+      if (f.cat !== 'all' && r.category !== f.cat) return false;
       if (f.basis !== 'all' && (r.basis || 'explicit') !== f.basis) return false;
       if (f.crit !== 'all' && r.criticality !== f.crit) return false;
       if (f.owner && (!r.owner || r.owner.ref !== f.owner)) return false;
@@ -760,6 +826,7 @@
     h += `<div class="filters">
       <div class="f-row"><input type="search" id="fq" placeholder="Слова из формулировки, номер пункта или ID" value="${esc(f.q)}" aria-label="Поиск по требованиям"></div>
       <div class="f-row">
+        <div class="f-group"><span class="f-label">Тип</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
         <div class="f-group"><span class="f-label">Модальность</span>${seg('modality', [['all', 'все'], ['shall', 'обязательно'], ['should', 'рекомендуется'], ['shall-not', 'запрещено']])}</div>
         <div class="f-group"><span class="f-label">Основание</span>${seg('basis', [['all', 'все'], ['explicit', 'есть в тексте'], ['implicit', 'выведена']])}</div>
         ${hasAuto ? `<div class="f-group"><span class="f-label">Проверка</span>${seg('check', [['all', 'все'], ['auto', 'автоматическая'], ['manual', 'экспертиза']])}</div>` : ''}
@@ -828,7 +895,15 @@
       v ? v.criterion : '', g.status ? L.regStatus[g.status] || g.status : '', g.version || '', g.effective || '', g.evidence || '', notes.join(' '),
     ];
     row.push(regComplete(row) ? 'Готово' : 'Заполнить');
+    row.push(CAT[r.category] || '', basisOf(r));
     return row;
+  }
+  // Основания требования: требования вышестоящих документов, из которых оно выведено
+  function basisOf(r) {
+    return linksOf(r).filter((l) => l.from === uk(r) && l.relation === 'derives').map((l) => {
+      const t = reqByUk(l.to);
+      return t ? `${(t.registry && t.registry.id) || t.id} (${docName(t.m)}, ${reqCite(t)})` : '';
+    }).filter(Boolean).join('; ');
   }
   const regComplete = (row) => !!row[0] && REG_REQUIRED.every((i) => String(row[i] || '').trim() !== '');
   const regMissing = (row) => REG_REQUIRED.filter((i) => String(row[i] || '').trim() === '').map((i) => REG_HEAD[i]);
@@ -838,6 +913,8 @@
     const words = norm(f.q).toLowerCase().split(' ').filter(Boolean);
     return list.filter((r) => {
       if (f.doc && r.m.key !== f.doc) return false;
+      if (f.cat && f.cat !== 'all' && r.category !== f.cat) return false;
+      if (f.level && String(levelOf(r.m) ?? 'ext') !== f.level) return false;
       if (f.crit !== 'all' && (f.crit === 'none' ? !!r.criticality : r.criticality !== f.crit)) return false;
       if (f.owner) {
         if (ownerByName) { if ((r.owner ? nameOf(r.owner.ref, r.m) : '') !== f.owner) return false; }
@@ -865,6 +942,8 @@
     h += `<div class="reg-fact"><span class="lbl">Карточек</span><b>${rows.length}</b></div>`;
     h += `<div class="reg-fact"><span class="lbl">Комплектных</span><b class="${done === rows.length && rows.length ? 'ok' : 'bad'}">${done}</b></div>`;
     if (!docs) h += `<div class="reg-fact st"><span class="lbl">Статус</span><b>${statuses.map(esc).join(', ') || '—'}</b></div>`;
+    const nb = list.filter((r) => r.category === 'business').length;
+    h += `<div class="reg-fact cat"><span class="lbl">Бизнес / системные</span><b><span class="cb">${nb}</span> / <span class="cs">${list.length - nb}</span></b></div>`;
     h += `<div class="reg-crit"><span class="lbl">Критичность</span><div class="crit-bar" role="img" aria-label="${byCrit.map(([c, n]) => `${c}: ${n}`).join(', ')}">${byCrit.filter(([, n]) => n).map(([c, n]) => `<span class="${c.toLowerCase()}" style="flex:${n}" title="${c}: ${n} — ${esc(L.criticality[c])}">${c} ${n}</span>`).join('')}${noCrit ? `<span class="none" style="flex:${noCrit}">без класса ${noCrit}</span>` : ''}</div>
       <div class="crit-legend">${byCrit.map(([c, n]) => `<span><i class="${c.toLowerCase()}"></i>${c}: ${n}, ${esc(L.criticality[c].replace(' невыполнения', ''))}</span>`).join('')}</div></div>`;
     return h + '</section>';
@@ -900,6 +979,7 @@
     h += `<div class="filters">
       <div class="f-row"><input type="search" id="rq" placeholder="ID карточки, наименование, слова формулировки" value="${esc(f.q)}" aria-label="Поиск по реестру"></div>
       <div class="f-row">
+        <div class="f-group"><span class="f-label">Тип</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
         <div class="f-group"><span class="f-label">Критичность</span>${seg('crit', [['all', 'все'], ...classes.filter((c) => m.reqs.some((r) => r.criticality === c)).map((c) => [c, c]), ...(m.reqs.some((r) => !r.criticality) ? [['none', 'без класса']] : [])])}</div>
         <div class="f-group"><span class="f-label">Комплектность</span>${seg('done', [['all', 'все'], ['ok', 'готово'], ['todo', 'заполнить']])}</div>
         ${inCommon ? `<div class="f-group"><span class="f-label">Пересечения</span>${seg('ov', [['all', 'все'], ['yes', 'есть']])}</div>` : ''}
@@ -961,8 +1041,10 @@
       <div class="f-row">
         <label class="f-group"><span class="f-label">Документ</span><select data-csel="doc"><option value="">все (${inc.length})</option>${inc.map((m) => `<option value="${esc(m.key)}"${f.doc === m.key ? ' selected' : ''}>${esc(docName(m))} — ${esc(docTitle(m).slice(0, 60))} (${m.reqs.length})</option>`).join('')}</select></label>
         ${owners.length ? `<label class="f-group"><span class="f-label">Владелец</span><select data-csel="owner"><option value="">все</option>${owners.map((o) => `<option${f.owner === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>` : ''}
+        <label class="f-group"><span class="f-label">Уровень</span><select data-csel="level"><option value="">все</option>${[1, 2, 3, 4, 'ext'].filter((l) => inc.some((m) => String(levelOf(m) ?? 'ext') === String(l))).map((l) => `<option value="${l}"${f.level === String(l) ? ' selected' : ''}>${l === 'ext' ? 'внешняя документация' : `${l} уровень — ${esc(levelInfo(l).purpose)}`}</option>`).join('')}</select></label>
       </div>
       <div class="f-row">
+        <div class="f-group"><span class="f-label">Тип</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
         <div class="f-group"><span class="f-label">Критичность</span>${seg('crit', [['all', 'все'], ['C1', 'C1'], ['C2', 'C2'], ['C3', 'C3'], ['C4', 'C4'], ['none', 'без класса']])}</div>
         <div class="f-group"><span class="f-label">Комплектность</span>${seg('done', [['all', 'все'], ['ok', 'готово'], ['todo', 'заполнить']])}</div>
         <div class="f-group"><span class="f-label">Пересечения</span>${seg('ov', [['all', 'все'], ['yes', 'есть']])}</div>
@@ -1001,15 +1083,15 @@
     const thin = { style: 'thin', color: { argb: 'FFBFBFBF' } };
     const border = { top: thin, left: thin, bottom: thin, right: thin };
 
-    ws.mergeCells('A1:R1');
+    ws.mergeCells('A1:T1');
     Object.assign(ws.getCell('A1'), { value: 'КОРПОРАТИВНЫЙ МАСТЕР-РЕЕСТР ТРЕБОВАНИЙ' });
     ws.getCell('A1').font = arial({ size: 18, bold: true, color: { argb: 'FFFFFFFF' } });
     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF17365D' } };
     ws.getCell('A1').alignment = { vertical: 'middle' };
     ws.getRow(1).height = 30;
-    ws.mergeCells('A2:R2');
+    ws.mergeCells('A2:T2');
     const today = new Date().toLocaleDateString('ru-RU');
-    ws.getCell('A2').value = `Одна строка = одна карточка = одно атомарное требование. Выгрузка: ${origin}, ${today}. Столбцы A–R совпадают с шаблоном пилота V0.1.`;
+    ws.getCell('A2').value = `Одна строка = одна карточка = одно атомарное требование. Выгрузка: ${origin}, ${today}. Столбцы A–R совпадают с шаблоном пилота V0.1; S–T — дополнительные: тип требования и основание.`;
     ws.getCell('A2').font = arial({ italic: true, color: { argb: 'FF595959' } });
     const cnt = (a, b) => rows.filter((x) => x[a] === b).length;
     const counters = [
@@ -1029,7 +1111,7 @@
       const c = head.getCell(i + 1);
       c.value = t;
       c.font = arial({ bold: true, color: { argb: 'FFFFFFFF' } });
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F75B5' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i >= 18 ? 'FF3D6B6B' : 'FF2F75B5' } };
       c.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
       c.border = border;
     });
@@ -1058,6 +1140,7 @@
     ws.dataValidations.add(`G6:G${lastV}`, list1(['L1', 'L2', 'L3', 'L4', 'L5', 'L6']));
     ws.dataValidations.add(`J6:J${lastV}`, list1(['C1', 'C2', 'C3', 'C4']));
     ws.dataValidations.add(`M6:M${lastV}`, list1(Object.values(L.regStatus)));
+    ws.dataValidations.add(`S6:S${lastV}`, list1(Object.values(CAT)));
     const fill = (argb) => ({ type: 'pattern', pattern: 'solid', bgColor: { argb } });
     ws.addConditionalFormatting({ ref: `J6:J${lastV}`, rules: [
       { type: 'containsText', operator: 'containsText', text: 'C1', priority: 1, style: { fill: fill('FFFFC7CE'), font: { color: { argb: 'FF9C0006' }, bold: true } } },
@@ -1067,7 +1150,7 @@
       { type: 'containsText', operator: 'containsText', text: 'Готово', priority: 3, style: { fill: fill('FFC6EFCE'), font: { color: { argb: 'FF006100' } } } },
       { type: 'containsText', operator: 'containsText', text: 'Заполнить', priority: 4, style: { fill: fill('FFFFEB9C'), font: { color: { argb: 'FF9C5700' } } } },
     ] });
-    ws.autoFilter = `A5:R${Math.max(last, 6)}`;
+    ws.autoFilter = `A5:T${Math.max(last, 6)}`;
 
     const ref = wb.addWorksheet('Справочники');
     ref.columns = [{ width: 10 }, { width: 52 }, { width: 4 }, { width: 10 }, { width: 52 }, { width: 4 }, { width: 24 }, { width: 50 }];
@@ -1111,6 +1194,7 @@
         level: g.level || '', owner: row[7], scope: row[8], crit: r.criticality || '', method: row[10], criterion: row[11],
         status: g.status || '', version: g.version || '', effective: g.effective || '', evidence: g.evidence || '', remark: g.remark || '',
         modality: r.modality, ownerConfirmed: r.owner ? r.owner.status === 'confirmed' : false,
+        category: r.category, categoryStatus: r.catAuto ? 'preliminary' : r.categoryStatus,
         critBasis: r.critBasis, group: `${docName(r.m)} — ${docTitle(r.m)}${r.m.entry.builtin ? '' : ` (файл «${r.m.entry.name}»)`}`,
       };
     });
@@ -1122,6 +1206,7 @@
     const res = window.ISM.convert.fromCards(cards, {
       fileStem: 'common-registry', code: 'CR', docId: `REG-COMMON-${ymd(today)}`, version: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
       title: title || 'Общий реестр требований', pairs,
+      links: W.links.filter((l) => l.relation === 'derives' && idx.has(l.from) && idx.has(l.to)).map((l) => ({ a: idx.get(l.from), b: idx.get(l.to), relation: 'implements' })),
       note: note || `Общий реестр собран в приложении ИСМ XML ${today.toLocaleDateString('ru-RU')}: ${pl(cards.length, 'карточка', 'карточки', 'карточек')} из ${pl(new Set(list.map((r) => r.m.key)).size, 'документа', 'документов', 'документов')}. Пункт каждой карточки содержит её формулировку; источник и пункт исходного документа — в атрибутах registry/@sourceDocument и @sourceClause.`,
     });
     return res.xml;
@@ -1233,6 +1318,285 @@
     box.innerHTML = h;
   }
 
+  /* ---------- Граф требований по уровням документов ---------- */
+  // Полосы как в классификаторе документов ИСМ: 1–4 уровень и внешняя документация.
+  // Узлы — требования внутри документов; рёбра — основания (нижестоящее требование выведено из вышестоящего),
+  // предложенные основания по сходству формулировок, пересечения и ссылки между документами.
+  const G = { vb: null, size: null, sel: '', drag: null, f: { cat: 'all', basis: true, sug: true, ov: false, refs: true, onlyInc: false } };
+  const GL = { label: 214, pad: 18, docW: 268, gapX: 22, gapY: 18, head: 66, node: 13, ngap: 5, cols: 13, maxNodes: 156, bandPad: 16 };
+  const levelKey = (m) => (!m || !m.type ? 'none' : m.type.level ?? 'ext');
+  const above = (up, low) => { // up выше low по иерархии
+    if (!up.type || !low.type || up === low) return false;
+    if (low.typeCode === 'EXT') return false;
+    if (up.typeCode === 'EXT') return true;
+    return up.type.level < low.type.level;
+  };
+  function graphSuggestions() {
+    if (W.gsug && W.gsug.ver === W.version) return W.gsug.list;
+    const ms = models().filter((m) => m.type);
+    const items = ms.flatMap((m) => m.reqs.map((r) => ({ key: uk(r), text: r.statement, r })));
+    const byKey = new Map(items.map((i) => [i.key, i.r]));
+    const best = new Map();
+    window.ISM.overlap.findPairs(items, { minScore: 0.3, skip: (a, b) => a.r.m === b.r.m || (!above(a.r.m, b.r.m) && !above(b.r.m, a.r.m)) }).forEach((p) => {
+      const a = byKey.get(p.a), b = byKey.get(p.b);
+      const [low, up] = above(a.m, b.m) ? [b, a] : [a, b];
+      const k = uk(low);
+      if (!best.has(k) || best.get(k).score < p.score) best.set(k, { from: k, to: uk(up), score: p.score });
+    });
+    const linked = new Set(W.links.map((l) => `${l.from}>${l.to}`));
+    const list = [...best.values()].filter((s) => !linked.has(`${s.from}>${s.to}`));
+    W.gsug = { ver: W.version, list };
+    return list;
+  }
+  function docRefEdges(ms) {
+    const nid = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
+    const byId = new Map(ms.filter((m) => m.id).map((m) => [nid(m.id), m]));
+    const out = [];
+    ms.forEach((m) => m.refs.forEach((rf) => { const t = byId.get(nid(rf.identifier)); if (t && t !== m) out.push({ from: m, to: t }); }));
+    return out;
+  }
+
+  function graphLayout() {
+    const ms = models().filter((m) => !G.f.onlyInc || m.entry.included);
+    const bands = [1, 2, 3, 4, 'ext'].map((k) => ({ k, docs: ms.filter((m) => levelKey(m) === k) }));
+    const none = ms.filter((m) => levelKey(m) === 'none');
+    if (none.length) bands.push({ k: 'none', docs: none });
+    const perRow = Math.min(4, Math.max(2, ...bands.map((b) => b.docs.length)));
+    const contentW = GL.label + GL.pad + perRow * (GL.docW + GL.gapX);
+    const pos = new Map();    // uk → {x, y, r, m}
+    const docs = new Map();   // key → {x, y, w, h, m}
+    let y = 0;
+    bands.forEach((band) => {
+      band.y = y;
+      let rowY = y + GL.bandPad;
+      let rowH = 0;
+      band.docs.forEach((m, i) => {
+        if (i && i % perRow === 0) { rowY += rowH + GL.gapY; rowH = 0; }
+        const x = GL.label + GL.pad + (i % perRow) * (GL.docW + GL.gapX);
+        const shown = m.reqs.slice(0, GL.maxNodes);
+        const rows = Math.max(1, Math.ceil(shown.length / GL.cols));
+        const h = GL.head + rows * (GL.node + GL.ngap) + 12 + (m.reqs.length > shown.length ? 16 : 0);
+        docs.set(m.key, { x, y: rowY, w: GL.docW, h, m, hidden: m.reqs.length - shown.length });
+        shown.forEach((r, j) => {
+          pos.set(uk(r), { x: x + 12 + (j % GL.cols) * (GL.node + GL.ngap) + GL.node / 2, y: rowY + GL.head + Math.floor(j / GL.cols) * (GL.node + GL.ngap) + GL.node / 2, r, m });
+        });
+        rowH = Math.max(rowH, h);
+      });
+      band.h = Math.max(112, (band.docs.length ? rowY - y + rowH : 0) + GL.bandPad * 2);
+      y += band.h;
+    });
+    return { bands, pos, docs, W: contentW + GL.pad, H: y, ms };
+  }
+
+  function viewGraph() {
+    const f = G.f;
+    const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-gf="${key}" data-v="${v}" aria-pressed="${f[key] === v}">${t}</button>`).join('')}</div>`;
+    const tog = (key, label, cls) => `<label class="g-tog ${cls}"><input type="checkbox" data-gt="${key}"${f[key] ? ' checked' : ''}><i aria-hidden="true"></i>${label}</label>`;
+    let h = `<div class="page-head"><div><h1>Граф требований</h1><p>Документы разложены по уровням иерархии ИСМ — от политик до записей и внешней документации. Квадратики — требования: фиолетовые бизнес, бирюзовые системные. Линии показывают, из какого требования вышестоящего документа выведено требование нижестоящего.</p></div></div>`;
+    h += `<div class="filters g-filters"><div class="f-row">
+        <div class="f-group"><span class="f-label">Требования</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
+        ${tog('basis', 'основания', 'basis')}${tog('sug', 'предложенные по сходству', 'sug')}${tog('ov', 'пересечения', 'ov')}${tog('refs', 'ссылки между документами', 'refs')}
+        <label class="f-group chk"><input type="checkbox" data-gt="onlyInc"${f.onlyInc ? ' checked' : ''}> только общий реестр</label>
+      </div></div>`;
+    h += `<div class="graph-box"><div class="graph-wrap" id="graphWrap"><div class="g-zoom"><button type="button" class="btn btn-sm" data-gz="in" aria-label="Крупнее">+</button><button type="button" class="btn btn-sm" data-gz="out" aria-label="Мельче">−</button><button type="button" class="btn btn-sm" data-gz="fit">Вписать</button></div><svg id="graphSvg" role="img" aria-label="Граф требований по уровням документов"></svg></div>
+      <aside class="g-panel" id="graphPanel"></aside></div>`;
+    h += '<section class="block"><h2>Связи списком</h2><div id="graphList"></div></section>';
+    return h;
+  }
+
+  function renderGraph(keepView) {
+    const svg = $('#graphSvg');
+    if (!svg) return;
+    const L0 = graphLayout();
+    G.layout = L0;
+    const f = G.f;
+    const t = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+    const wrapN = (s, n, max = 2) => { const w = s.split(/\s+/); const lines = ['']; w.forEach((x) => { if ((lines[lines.length - 1] + ' ' + x).trim().length > n && lines.length < max) lines.push(x); else lines[lines.length - 1] = (lines[lines.length - 1] + ' ' + x).trim(); }); return lines.map((l, i) => (i === max - 1 ? t(l, n) : l)); };
+    const wrap2 = (s, n) => wrapN(s, n, 2);
+    let g = '';
+    // полосы уровней
+    L0.bands.forEach((b, i) => {
+      const info = typeof b.k === 'number' ? levelInfo(b.k) : null;
+      const codes = typeList().filter((x) => (b.k === 'ext' ? x.level === null : x.level === b.k)).map((x) => x.code).join(' · ');
+      g += `<g class="band${i % 2 ? ' alt' : ''}"><rect x="-2000" y="${b.y}" width="${L0.W + 6000}" height="${b.h}"/><line x1="-2000" y1="${b.y + b.h}" x2="${L0.W + 6000}" y2="${b.y + b.h}"/>`;
+      g += `<line class="band-sep" x1="${GL.label}" y1="${b.y}" x2="${GL.label}" y2="${b.y + b.h}"/>`;
+      g += `<text class="band-n" x="16" y="${b.y + 30}">${b.k === 'ext' ? 'Внешняя' : b.k === 'none' ? 'Вид не задан' : `${b.k} уровень`}</text>`;
+      const sub = b.k === 'ext' ? 'документация, созданная за пределами Предприятия' : b.k === 'none' ? 'выберите вид документа на главной' : info.purpose;
+      const subLines = wrapN(sub, 27, 3);
+      subLines.forEach((l, j) => { g += `<text class="band-sub" x="16" y="${b.y + 50 + j * 16}">${esc(l)}</text>`; });
+      if (codes) wrapN(codes, 22, 2).forEach((l, j) => { g += `<text class="band-codes" x="16" y="${b.y + 58 + subLines.length * 16 + j * 14}">${esc(l)}</text>`; });
+      if (!b.docs.length) g += `<text class="band-empty" x="${GL.label + GL.pad}" y="${b.y + b.h / 2 + 5}">Документов этого уровня нет${b.k === 1 ? ' — загрузите политику, цели или руководство' : b.k === 2 ? ' — положения, процедуры, стандарты, регламенты' : b.k === 3 ? ' — методики и инструкции' : b.k === 4 ? ' — записи и отчёты: реестры, журналы, чек-листы' : ' — законы, ГОСТы, СНиПы, ТУ'}</text>`;
+      g += '</g>';
+    });
+    // рёбра
+    const sel = G.sel;
+    const linkedTo = new Set();
+    if (sel) {
+      const walk = (k, dir) => W.links.filter((l) => l.relation === 'derives' && (dir === 'up' ? l.from === k : l.to === k)).forEach((l) => { const n = dir === 'up' ? l.to : l.from; if (!linkedTo.has(n)) { linkedTo.add(n); walk(n, dir); } });
+      linkedTo.add(sel); walk(sel, 'up'); walk(sel, 'down');
+    }
+    const curve = (a, b, cls, title, data = '') => {
+      const my = (a.y + b.y) / 2;
+      const d = Math.abs(a.y - b.y) < 8 ? `M${a.x} ${a.y} C${a.x} ${a.y - 40},${b.x} ${b.y - 40},${b.x} ${b.y}` : `M${a.x} ${a.y} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y}`;
+      return `<path class="edge ${cls}" d="${d}"${data}><title>${esc(title)}</title></path>`;
+    };
+    let edges = '';
+    if (f.refs) docRefEdges(L0.ms).forEach((e) => {
+      const a = L0.docs.get(e.from.key), b = L0.docs.get(e.to.key);
+      if (a && b) edges += curve({ x: a.x + a.w / 2, y: a.y + 2 }, { x: b.x + b.w / 2, y: b.y + b.h - 2 }, 'ref', `${docName(e.from)} ссылается на ${docName(e.to)}`);
+    });
+    if (f.ov) overlapPairs().forEach((p) => {
+      const a = L0.pos.get(p.ka), b = L0.pos.get(p.kb);
+      if (a && b) edges += curve(a, b, `ov ${p.kind}${sel && !(p.ka === sel || p.kb === sel) ? ' dim' : ''}`, `${L.ovKind[p.kind]}: ${Math.round(p.score * 100)} %`);
+    });
+    if (f.sug) graphSuggestions().forEach((s) => {
+      const a = L0.pos.get(s.from), b = L0.pos.get(s.to);
+      if (a && b) edges += curve(a, b, `sug${sel && !(s.from === sel || s.to === sel) ? ' dim' : ''}`, `Предложено основание (сходство ${Math.round(s.score * 100)} %)`, ` data-sug="${esc(s.from)}>${esc(s.to)}"`);
+    });
+    if (f.basis) W.links.forEach((l) => {
+      const a = L0.pos.get(l.from), b = L0.pos.get(l.to);
+      if (a && b) edges += curve(a, b, `basis${sel ? (linkedTo.has(l.from) && linkedTo.has(l.to) ? ' hot' : ' dim') : ''}`, 'Основание: требование выведено из вышестоящего');
+    });
+    g += `<g class="edges">${edges}</g>`;
+    // документы и требования
+    L0.docs.forEach((d) => {
+      const m = d.m;
+      const lines = wrap2(docTitle(m), 36);
+      const nSys = m.reqs.filter((r) => r.category === 'system').length;
+      g += `<g class="gdoc${m.entry.included ? '' : ' excluded'}${G.sel === 'doc:' + m.key ? ' on' : ''}" data-gdoc="${esc(m.key)}">
+        <rect class="gdoc-box" x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}"/>
+        <rect class="gdoc-code" x="${d.x + 10}" y="${d.y + 9}" width="${(m.typeCode || '—').length * 8 + 12}" height="17"/>
+        <text class="gdoc-type" x="${d.x + 16}" y="${d.y + 21}">${esc(m.typeCode || '—')}</text>
+        <text class="gdoc-id" x="${d.x + 22 + (m.typeCode || '—').length * 8 + 8}" y="${d.y + 22}">${esc(t(docName(m), 22))}</text>
+        ${lines.map((l, j) => `<text class="gdoc-title" x="${d.x + 10}" y="${d.y + 42 + j * 14}">${esc(l)}</text>`).join('')}
+        <title>${esc(`${m.type ? m.type.name : 'Вид не задан'} ${docName(m)} — ${docTitle(m)}. Требований: ${m.reqs.length}, системных: ${nSys}`)}</title>
+      </g>`;
+      if (d.hidden) g += `<text class="gdoc-more" x="${d.x + 12}" y="${d.y + d.h - 8}">и ещё ${d.hidden} — откройте документ</text>`;
+    });
+    L0.pos.forEach((p, k) => {
+      const r = p.r;
+      const dim = (f.cat !== 'all' && r.category !== f.cat) || (sel && !sel.startsWith('doc:') && !linkedTo.has(k));
+      const hasBasis = W.links.some((l) => l.from === k);
+      g += `<rect class="gnode ${r.category}${dim ? ' dim' : ''}${k === sel ? ' on' : ''}${hasBasis ? ' linked' : ''}" x="${p.x - GL.node / 2}" y="${p.y - GL.node / 2}" width="${GL.node}" height="${GL.node}" rx="2" data-guk="${esc(k)}"><title>${esc(`${reqCite(r)} · ${CAT[r.category]}\n${r.statement}`)}</title></rect>`;
+    });
+    svg.innerHTML = `<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arr"/></marker></defs>${g}`;
+    G.size = { w: L0.W, h: L0.H };
+    if (!keepView || !G.vb) graphFit(); else setVB(G.vb);
+    renderGraphPanel();
+    renderGraphList();
+  }
+  function setVB(vb) { G.vb = vb; const svg = $('#graphSvg'); if (svg) svg.setAttribute('viewBox', `${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`); }
+  function graphFit() {
+    const wrap = $('#graphWrap');
+    if (!wrap || !G.size) return;
+    // По ширине: весь граф виден целиком, но не крупнее натурального размера; по высоте — прокрутка колесом
+    const ratio = wrap.clientHeight / Math.max(1, wrap.clientWidth);
+    const w = Math.max(wrap.clientWidth, Math.min(G.size.w, wrap.clientWidth / 0.6)); // на телефоне не мельче 60 %, остальное — перетаскиванием
+    setVB({ x: 0, y: 0, w, h: w * ratio });
+  }
+  function graphZoom(k, cx, cy) {
+    const vb = G.vb; if (!vb) return;
+    const nw = Math.min(Math.max(vb.w * k, 200), G.size.w * 4);
+    const f = nw / vb.w;
+    const px = cx ?? vb.x + vb.w / 2, py = cy ?? vb.y + vb.h / 2;
+    setVB({ x: px - (px - vb.x) * f, y: py - (py - vb.y) * f, w: nw, h: vb.h * f });
+  }
+
+  function renderGraphPanel() {
+    const box = $('#graphPanel');
+    if (!box) return;
+    const sel = G.sel;
+    if (!sel) {
+      const L0 = G.layout;
+      const nReq = [...L0.docs.values()].reduce((a, d) => a + d.m.reqs.length, 0);
+      box.innerHTML = `<h3>Как читать граф</h3>
+        <ul class="g-legend">
+          <li><i class="lg-node business"></i>бизнес-требование</li><li><i class="lg-node system"></i>системное требование</li>
+          <li><i class="lg-node linked"></i>есть основание</li>
+          <li><i class="lg-line basis"></i>основание: требование выведено из вышестоящего</li>
+          <li><i class="lg-line sug"></i>предложено по сходству формулировок</li>
+          <li><i class="lg-line ov"></i>пересечение или противоречие</li><li><i class="lg-line ref"></i>документ ссылается на документ</li>
+        </ul>
+        <p class="muted">Документов: ${L0.docs.size}, требований: ${nReq}, оснований: ${W.links.length}, предложений: ${graphSuggestions().length}. Нажмите на требование, чтобы увидеть его цепочку оснований, или на документ.</p>
+        <p class="muted">Перетаскивайте граф мышью, колесо — прокрутка, Ctrl + колесо — масштаб.</p>`;
+      return;
+    }
+    if (sel.startsWith('doc:')) {
+      const m = modelOf(entry(sel.slice(4)));
+      if (!m) { G.sel = ''; return renderGraphPanel(); }
+      const nSys = m.reqs.filter((r) => r.category === 'system').length;
+      const ups = new Set(W.links.filter((l) => l.from.startsWith(m.key + '|')).map((l) => l.to.split('|')[0]));
+      const downs = new Set(W.links.filter((l) => l.to.startsWith(m.key + '|')).map((l) => l.from.split('|')[0]));
+      const nm = (k) => { const x = modelOf(entry(k)); return x ? `${x.typeCode || '—'} ${docName(x)}` : k; };
+      box.innerHTML = `<p class="g-kicker">${srcBadge(m.entry)} ${esc(m.type ? `${m.type.name}, ${m.type.level ? m.type.level + ' уровень' : 'внешняя документация'}` : 'вид не задан')}</p>
+        <h3>${esc(docName(m))}</h3><p>${esc(docTitle(m))}</p>
+        <p class="muted">Требований ${m.reqs.length}: бизнес ${m.reqs.length - nSys}, системных ${nSys}.</p>
+        ${ups.size ? `<p><b>Основания из:</b> ${[...ups].map((k) => esc(nm(k))).join(', ')}</p>` : ''}
+        ${downs.size ? `<p><b>Детализируется в:</b> ${[...downs].map((k) => esc(nm(k))).join(', ')}</p>` : ''}
+        <div class="req-actions"><a href="#/open/${esc(m.key)}">Открыть документ</a><a href="#/open/${esc(m.key)}/registry">Реестр документа</a><button type="button" data-gsel="">Снять выделение</button></div>`;
+      return;
+    }
+    const r = reqByUk(sel);
+    if (!r) { G.sel = ''; return renderGraphPanel(); }
+    const ups = W.links.filter((l) => l.from === sel && l.relation === 'derives').map((l) => reqByUk(l.to)).filter(Boolean);
+    const downs = W.links.filter((l) => l.to === sel && l.relation === 'derives').map((l) => reqByUk(l.from)).filter(Boolean);
+    const sug = graphSuggestions().filter((s) => s.from === sel).map((s) => ({ ...s, t: reqByUk(s.to) })).filter((s) => s.t);
+    const item = (x, extra = '') => `<li><button type="button" class="g-jump" data-gsel="${esc(uk(x))}">${esc(x.m.typeCode || '—')} ${esc(docName(x.m))}, ${esc(reqCite(x))}</button><span>${esc(x.statement.length > 140 ? x.statement.slice(0, 138) + '…' : x.statement)}</span>${extra}</li>`;
+    box.innerHTML = `<p class="g-kicker">${catChip(r)} ${esc(r.m.typeCode || '—')} ${esc(docName(r.m))} · ${esc(reqCite(r))}${r.registry && r.registry.id ? ` · <span class="req-id">${esc(r.registry.id)}</span>` : ''}</p>
+      <p class="g-stmt">${esc(r.statement)}</p>
+      <h4>Основания ${ups.length ? `(${ups.length})` : ''}</h4>${ups.length ? `<ul class="g-list">${ups.map((x) => item(x, `<button type="button" class="link-btn" data-gunlink="${esc(sel)}>${esc(uk(x))}">убрать</button>`)).join('')}</ul>` : `<p class="muted">${basisDocs(r.m).length ? 'Не указаны.' : 'Выше по иерархии документов нет.'}</p>`}
+      ${sug.length ? `<h4>Предложено</h4><ul class="g-list">${sug.map((s) => item(s.t, `<button type="button" class="btn btn-sm" data-gaccept="${esc(s.from)}>${esc(s.to)}">Связать · ${Math.round(s.score * 100)} %</button>`)).join('')}</ul>` : ''}
+      <h4>Выведены из него ${downs.length ? `(${downs.length})` : ''}</h4>${downs.length ? `<ul class="g-list">${downs.map((x) => item(x)).join('')}</ul>` : '<p class="muted">Нет.</p>'}
+      <div class="req-actions"><a href="${esc(`#/open/${r.m.key}/req/${r.id}`)}">Открыть</a>${editBtn(r, 'Изменить и связать')}<button type="button" data-gsel="">Снять выделение</button></div>`;
+    return undefined;
+  }
+  function renderGraphList() {
+    const box = $('#graphList');
+    if (!box) return;
+    const rows = W.links.filter((l) => l.relation === 'derives').map((l) => [reqByUk(l.from), reqByUk(l.to)]).filter(([a, b]) => a && b);
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty">Оснований пока нет. ${graphSuggestions().length ? `Есть ${pl(graphSuggestions().length, 'предложение', 'предложения', 'предложений')} по сходству формулировок: выберите требование на графе и нажмите «Связать».` : 'Загрузите документы разных уровней (например, положение и методику) — приложение предложит связи по сходству формулировок.'}</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="table-wrap"><table class="grid g-table"><thead><tr><th>Требование</th><th>Основание (вышестоящее)</th></tr></thead><tbody>${rows.map(([a, b]) => `<tr><td><b>${esc(a.m.typeCode || '—')} ${esc(docName(a.m))}, ${esc(reqCite(a))}</b> ${catChip(a)}<div>${esc(a.statement)}</div></td><td><b>${esc(b.m.typeCode || '—')} ${esc(docName(b.m))}, ${esc(reqCite(b))}</b> ${catChip(b)}<div>${esc(b.statement)}</div></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function bindGraph() {
+    const wrap = $('#graphWrap');
+    if (!wrap || wrap.dataset.bound) return;
+    wrap.dataset.bound = '1';
+    const svg = $('#graphSvg');
+    const toSvg = (ev) => { const r = svg.getBoundingClientRect(); return { x: G.vb.x + (ev.clientX - r.left) / r.width * G.vb.w, y: G.vb.y + (ev.clientY - r.top) / r.height * G.vb.h }; };
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      if (ev.ctrlKey || ev.metaKey) { const p = toSvg(ev); graphZoom(ev.deltaY > 0 ? 1.12 : 1 / 1.12, p.x, p.y); return; }
+      const k = G.vb.w / svg.getBoundingClientRect().width;
+      setVB({ ...G.vb, x: G.vb.x + ev.deltaX * k, y: G.vb.y + ev.deltaY * k });
+    }, { passive: false });
+    svg.addEventListener('pointerdown', (ev) => { G.drag = { x: ev.clientX, y: ev.clientY, vb: { ...G.vb }, moved: false }; });
+    svg.addEventListener('pointermove', (ev) => {
+      const d = G.drag; if (!d) return;
+      const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+      if (!d.moved && Math.hypot(dx, dy) < 4) return;
+      if (!d.moved) { d.moved = true; try { svg.setPointerCapture(ev.pointerId); } catch { /* нет захвата */ } svg.classList.add('grabbing'); }
+      const k = G.vb.w / svg.getBoundingClientRect().width;
+      setVB({ ...d.vb, x: d.vb.x - dx * k, y: d.vb.y - dy * k });
+    });
+    const end = (ev) => {
+      const d = G.drag; G.drag = null; svg.classList.remove('grabbing');
+      if (d && d.moved) return;
+      const node = ev.target.closest && ev.target.closest('[data-guk]');
+      const doc = ev.target.closest && ev.target.closest('[data-gdoc]');
+      const sug = ev.target.closest && ev.target.closest('[data-sug]');
+      if (node) G.sel = G.sel === node.dataset.guk ? '' : node.dataset.guk;
+      else if (sug) G.sel = sug.dataset.sug.split('>')[0];
+      else if (doc) G.sel = G.sel === 'doc:' + doc.dataset.gdoc ? '' : 'doc:' + doc.dataset.gdoc;
+      else if (ev.type === 'pointerup') G.sel = '';
+      renderGraph(true);
+    };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', () => { G.drag = null; svg.classList.remove('grabbing'); });
+  }
+
   /* ---------- Главная: загрузка и список документов ---------- */
   function viewHome() {
     const docs = W.docs;
@@ -1253,12 +1617,19 @@
       </div>
       <div id="upReport">${uploadReport()}</div>
     </section>`;
+    if (W.cloud && S.localDocs && S.localDocs.length) {
+      h += `<div class="migrate-note"><p><b>В этом браузере есть ${pl(S.localDocs.length, 'документ', 'документа', 'документов')}, загруженных без входа:</b> ${S.localDocs.map((d) => esc(d.name)).join(', ')}. Перенести их в личный кабинет?</p><button type="button" class="btn btn-primary btn-sm" id="migrateLocal">Перенести в кабинет</button></div>`;
+    }
 
     h += `<section class="block docs-block"><div class="block-head"><h2>В работе ${docs.length ? `<span class="count">${docs.length}</span>` : ''}</h2>
       ${docs.length ? `<div class="head-actions"><a class="btn btn-sm" href="#/common">${ICON.reg}Общий реестр · ${nReq}</a><a class="btn btn-sm" href="#/overlaps">${ICON.ov}Пересечения · ${nOv}</a><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Всё одним архивом</button></div>` : ''}</div>`;
     if (!docs.length) h += `<div class="empty">Документов пока нет.${W.builtinError ? ' Опубликованный регламент не загрузился: откройте приложение по ссылке GitHub Pages, а не двойным щелчком по файлу.' : ''}</div>`;
-    else h += `<div class="doc-cards">${docs.map(docCard).join('')}</div>`;
-    h += `<p class="ws-foot muted">${W.storage ? 'Загруженные документы и правки хранятся только в этом браузере. Чтобы передать их коллеге, скачайте XML документа или общий реестр и отправьте файлом — коллега загрузит его у себя.' : '<b>Браузер не разрешает сохранять данные</b> (например, в приватном окне): загруженные документы пропадут после закрытия вкладки.'}${docs.some((d) => !d.builtin) ? ' <button type="button" class="link-btn" id="wsClear">Удалить все загруженные документы</button>' : ''}</p>`;
+    else {
+      const lv = (e) => { const m = modelOf(e); if (!m || !m.type) return 'none'; return m.type.level ?? 'ext'; };
+      const groups = [1, 2, 3, 4, 'ext', 'none'].map((l) => [l, docs.filter((e) => lv(e) === l)]).filter(([, list]) => list.length);
+      h += groups.map(([l, list]) => `<div class="lvl-group"><h3 class="lvl-head">${l === 'ext' ? '<span class="lvl-n ext">ВН</span><span>Внешняя документация</span>' : l === 'none' ? '<span class="lvl-n none">?</span><span>Вид документа не определён <span class="muted">— выберите его в карточке документа</span></span>' : `<span class="lvl-n">${l}</span><span>${l} уровень <span class="muted">— ${esc(levelInfo(l).purpose)}</span></span>`}<span class="count">${list.length}</span></h3><div class="doc-cards">${list.map(docCard).join('')}</div></div>`).join('');
+    }
+    h += `<p class="ws-foot muted">${W.cloud ? `Документы и правки хранятся в базе данных и доступны вам с любого устройства после входа. Другие пользователи их не видят; чтобы передать документ коллеге, скачайте XML или реестр.` : W.storage ? 'Загруженные документы и правки хранятся только в этом браузере. Чтобы передать их коллеге, скачайте XML документа или общий реестр и отправьте файлом — коллега загрузит его у себя.' : '<b>Браузер не разрешает сохранять данные</b> (например, в приватном окне): загруженные документы пропадут после закрытия вкладки.'}${docs.some((d) => !d.builtin) ? ' <button type="button" class="link-btn" id="wsClear">Удалить все загруженные документы</button>' : ''}</p>`;
     h += '</section>';
 
     h += `<section class="block how"><h2>Как это работает</h2><ol class="steps">
@@ -1285,11 +1656,13 @@
     if (m.sections.length && e.kind !== 'xlsx') facts.push(pl(m.sections.length, 'раздел', 'раздела', 'разделов'));
     if (nClauses && e.kind !== 'xlsx') facts.push(pl(nClauses, 'пункт', 'пункта', 'пунктов'));
     facts.push(`<b>${pl(m.reqs.length, 'требование', 'требования', 'требований')}</b>`);
-    if (m.reqs.length) facts.push(`комплектно ${done} из ${m.reqs.length}`);
+    const nSys = m.reqs.filter((r) => r.category === 'system').length;
+    if (m.reqs.length) facts.push(`бизнес ${m.reqs.length - nSys}, системных ${nSys}`, `комплектно ${done} из ${m.reqs.length}`);
     const nOv = e.included ? new Set(overlapPairs().filter((p) => p.a.m === m || p.b.m === m).map((p) => p.id)).size : 0;
     const warn = (e.report && e.report.warnings || []).filter(Boolean);
     return `<article class="doc-card${cur ? ' current' : ''}${e.included ? '' : ' excluded'}">
-      <div class="dc-top">${srcBadge(e)}<span class="dc-code">${esc(m.id || '—')}</span>${m.version ? `<span class="muted">версия ${esc(m.version)}</span>` : ''}${e.overridden ? '<span class="chip implicit">есть правки</span>' : ''}</div>
+      <div class="dc-top">${srcBadge(e)}<span class="dc-code">${esc(m.id || '—')}</span>${m.version ? `<span class="muted">версия ${esc(m.version)}</span>` : ''}${e.overridden ? '<span class="chip implicit">есть правки</span>' : ''}
+        <select class="type-sel" data-doctype="${esc(e.key)}" title="Вид документа" aria-label="Вид документа">${typeOptions(m.typeCode)}</select></div>
       <h3><a href="#/open/${esc(e.key)}">${esc(docTitle(m))}</a></h3>
       <p class="dc-facts">${facts.join(' · ')}${nOv ? ` · <a href="#/overlaps?doc=${esc(e.key)}">пересечения: ${nOv}</a>` : ''}</p>
       ${warn.length ? `<p class="dc-warn" title="${esc(warn.join('\n'))}">${esc(warn[0])}${warn.length > 1 ? ` <span class="muted">и ещё ${warn.length - 1}</span>` : ''}</p>` : ''}
@@ -1302,6 +1675,27 @@
         ${e.builtin ? (e.overridden ? `<button type="button" class="btn btn-sm" data-docreset="${esc(e.key)}">Сбросить правки</button>` : '') : delBtn(e)}
       </div>
     </article>`;
+  }
+  function typeOptions(cur) {
+    const groups = [1, 2, 3, 4, null].map((l) => [l, typeList().filter((t) => t.level === l)]);
+    return `<option value=""${cur ? '' : ' selected'}>вид не определён</option>${groups.map(([l, list]) => `<optgroup label="${l ? `${l} уровень — ${levelInfo(l).purpose}` : 'Внешняя документация'}">${list.map((t) => `<option value="${t.code}"${t.code === cur ? ' selected' : ''}>${t.code} · ${esc(t.name)}</option>`).join('')}</optgroup>`).join('')}`;
+  }
+  // Вид документа записывается в XML: metadata/documentType/@code и название вида
+  async function setDocType(key, code) {
+    const e = entry(key);
+    if (!e) return;
+    const t = typeByCode(code);
+    try {
+      const dom = xdom(e);
+      const md = kid(dom.documentElement, 'metadata');
+      let dt = kid(md, 'documentType');
+      if (!dt) { dt = mk(dom, 'documentType'); place(dom, md, dt, kid(md, 'title') ? kid(md, 'title').nextElementSibling : md.firstElementChild); }
+      if (code) dt.setAttribute('code', code); else dt.removeAttribute('code');
+      dt.textContent = t ? t.name : 'Документ';
+      await commitDoc(e, dom);
+      toast(t ? `Вид документа: ${t.name}${t.level ? `, ${t.level} уровень` : ''}` : 'Вид документа сброшен');
+      rerender();
+    } catch (err) { toast('Не удалось изменить вид: ' + err.message, 5000); }
   }
   const delBtn = (e) => `<button type="button" class="btn btn-sm danger" data-docdel="${esc(e.key)}">${S.confirmDel === e.key ? 'Точно удалить?' : 'Удалить'}</button>`;
 
@@ -1371,6 +1765,7 @@
     if (!e || e.builtin) return;
     W.docs = W.docs.filter((d) => d !== e);
     W.models.delete(key);
+    for (const l of W.links.filter((x) => x.from.startsWith(key + '|') || x.to.startsWith(key + '|'))) await removeLink(l);
     if (W.storage) await store().deleteDoc(key).catch(() => {});
     if (S.key === key) { S.key = ''; S.m = null; if (W.docs[0]) useDoc(W.docs[0].key); }
     bump();
@@ -1509,6 +1904,10 @@
     if (d.crit) reqEl.setAttribute('criticality', d.crit); else reqEl.removeAttribute('criticality');
     setOne('criticalityBasis', () => (d.critBasis ? mk(dom, 'criticalityBasis', { status }, d.critBasis) : null));
     reqEl.setAttribute('modality', d.modality);
+    if (d.category) {
+      reqEl.setAttribute('category', d.category);
+      reqEl.setAttribute('categoryStatus', d.category !== orig.category || orig.catConfirmed ? 'confirmed' : 'preliminary');
+    }
     const found = window.ISM.convert.modalityOf(d.statement);
     reqEl.setAttribute('modalityBasis', found === d.modality ? 'explicit' : 'implicit');
     if (d.quote) reqEl.setAttribute('source', norm(d.quote) === norm(d.statement) ? 'authoritative' : 'derived');
@@ -1572,8 +1971,10 @@
       object: r && r.objects.length ? nameOf(r.objects[0], m) : '', owner: r && r.owner ? nameOf(r.owner.ref, m) : '',
       conditions: r ? r.conditions : [], method: r ? methodText(r.verification) : '', criterion: r && r.verification ? r.verification.criterion : '',
       regId: g.id || '', level: g.level || topLevel, status: g.status || 'draft', version: g.version || '0.1', effective: g.effective || '', evidence: g.evidence || '', remark: g.remark || '',
+      category: r ? r.category : window.ISM.convert.categoryOf(st), catConfirmed: !!(r && !r.catAuto && r.categoryStatus === 'confirmed'),
     };
-    S.edit = { key, reqId: r ? r.id : '', clauseId: c ? c.id : '', orig: val, isNew };
+    const links = r ? linksOf(r).filter((l) => l.from === uk(r) && l.relation === 'derives').map((l) => l.to) : [];
+    S.edit = { key, reqId: r ? r.id : '', clauseId: c ? c.id : '', orig: val, isNew, links, linksOrig: links.slice() };
     S.confirmDel = '';
     const opt = (list, cur) => list.map(([k, t]) => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
     const methods = [...new Set([...Object.values(REG_METHOD), ...METHOD_HINTS, ...m.reqs.map((x) => methodText(x.verification)).filter(Boolean)])];
@@ -1589,8 +1990,9 @@
         <label class="fld wide"><span>Атомарная формулировка${need}</span><textarea name="statement" rows="3" required>${esc(val.statement)}</textarea></label>
         <label class="fld wide"><span>Дословная цитата из пункта</span><textarea name="quote" rows="2">${esc(val.quote)}</textarea><small id="edQuoteHelp">Фрагмент текста пункта без изменений — по нему проверяется связь требования с текстом.</small></label>
         <label class="fld wide"><span>Наименование карточки${need}</span><input name="title" value="${esc(val.title)}" placeholder="Кратко: о чём требование"></label>
-        <div class="fld-row">
+        <div class="fld-row four">
           <label class="fld"><span>Модальность</span><select name="modality">${opt(Object.entries(L.modality), val.modality)}</select></label>
+          <label class="fld"><span>Тип требования</span><select name="category">${opt(Object.entries(CAT), val.category)}</select>${val.catConfirmed ? '' : '<small>определён автоматически</small>'}</label>
           <label class="fld"><span>Критичность${need}</span><select name="crit"><option value="">не назначена</option>${opt(Object.entries(L.criticality).map(([k, t]) => [k, `${k} — ${t.replace(' невыполнения', '')}`]), val.crit)}</select></label>
           <label class="fld"><span>Уровень${need}</span><select name="level">${opt(Object.entries(L.level).map(([k, t]) => [k, `${k} — ${t}`]), val.level)}</select></label>
         </div>
@@ -1605,6 +2007,7 @@
           <label class="fld"><span>Метод верификации${need}</span><input name="method" list="dlMethods" value="${esc(val.method)}"></label>
           <label class="fld"><span>Критерий приёмки${need}</span><input name="criterion" value="${esc(val.criterion)}" placeholder="Когда требование считается выполненным"></label>
         </div>
+        <fieldset class="ed-links"><legend>Основание — требования вышестоящих документов</legend><div id="edLinks">${edLinksHtml()}</div></fieldset>
         <fieldset class="ed-reg"><legend>Карточка реестра</legend>
           <div class="fld-row">
             <label class="fld"><span>ID карточки</span><input name="regId" value="${esc(val.regId)}" placeholder="${isNew ? 'TEMP присвоится при сохранении' : ''}"></label>
@@ -1634,6 +2037,40 @@
     const first = dlg.querySelector(isNew ? '[name="statement"]' : '[name="owner"]');
     if (first) first.focus();
   }
+  // Кандидаты в основания: требования документов выше по иерархии (и внешняя документация)
+  function basisDocs(m) {
+    if (m.typeCode === 'EXT') return [];
+    const lvl = levelOf(m);
+    return models().filter((x) => x !== m && (!m.type || x.typeCode === 'EXT' || (levelOf(x) && levelOf(x) < lvl)));
+  }
+  function suggestBasis(stmt, cands, n = 5, min = 0.2) {
+    if (!stmt || !cands.length) return [];
+    const items = [{ key: '__self', text: stmt }, ...cands.map((r) => ({ key: uk(r), text: r.statement }))];
+    return window.ISM.overlap.findPairs(items, { minScore: min }).filter((p) => p.a === '__self' || p.b === '__self')
+      .slice(0, n).map((p) => ({ key: p.a === '__self' ? p.b : p.a, score: p.score }));
+  }
+  function edLinksHtml() {
+    const ed = S.edit;
+    const m = modelOf(entry(ed.key));
+    const docs = basisDocs(m);
+    const cur = ed.links.map((k) => reqByUk(k)).filter(Boolean);
+    let h = cur.length
+      ? `<ul class="link-list">${cur.map((t) => `<li><span class="lk-doc">${srcBadge(t.m.entry)}<b>${esc(docName(t.m))}</b> ${esc(reqCite(t))}${t.registry && t.registry.id ? ` · <span class="req-id">${esc(t.registry.id)}</span>` : ''}</span><span class="lk-text">${esc(t.statement)}</span><button type="button" class="icon-x sm" data-unlink="${esc(uk(t))}" aria-label="Убрать основание"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('')}</ul>`
+      : '<p class="muted lk-empty">Оснований нет.</p>';
+    if (!docs.length) {
+      return h + `<p class="muted lk-empty">${m.typeCode === 'EXT' ? 'Внешняя документация — верх иерархии, оснований у неё нет.' : `Выше по иерархии документов нет. Загрузите ${levelOf(m) === 1 ? 'внешний документ (закон, ГОСТ)' : 'положение, стандарт, регламент или политику'}, чтобы связать требования.`}</p>`;
+    }
+    const cands = docs.flatMap((x) => x.reqs).filter((t) => !ed.links.includes(uk(t)));
+    const stmt = ($('#edForm [name="statement"]') && $('#edForm [name="statement"]').value) || ed.orig.statement;
+    const sug = suggestBasis(stmt, cands);
+    const short = (t) => `${reqCite(t)} — ${t.statement.length > 90 ? t.statement.slice(0, 88) + '…' : t.statement}`;
+    h += `<div class="lk-add"><select id="edLinkSel" aria-label="Требование-основание"><option value="">Выберите требование вышестоящего документа…</option>
+      ${sug.length ? `<optgroup label="Похожие по формулировке">${sug.map((x) => { const t = reqByUk(x.key); return `<option value="${esc(x.key)}">${Math.round(x.score * 100)} % · ${esc(docName(t.m))} ${esc(short(t))}</option>`; }).join('')}</optgroup>` : ''}
+      ${docs.map((x) => `<optgroup label="${esc(`${x.type ? x.type.code + ' · ' : ''}${docName(x)} — ${docTitle(x)}`.slice(0, 90))}">${x.reqs.filter((t) => !ed.links.includes(uk(t))).map((t) => `<option value="${esc(uk(t))}">${esc(short(t))}</option>`).join('')}</optgroup>`).join('')}
+      </select><button type="button" class="btn btn-sm" id="edLinkAdd">Добавить</button></div>
+      <small class="muted">Нижестоящее требование выводится из вышестоящего и реализует его. Связи видны на графе требований.</small>`;
+    return h;
+  }
   function closeEditor() {
     const dlg = $('#editor');
     if (dlg.open) { if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open'); }
@@ -1650,6 +2087,7 @@
       confirmed: fd.get('confirmed') === 'on', object: g('object'), owner: g('owner'),
       conditions: String(fd.get('conditions') || '').split('\n').map(norm).filter(Boolean), method: g('method'), criterion: g('criterion'),
       regId: g('regId'), level: g('level'), status: g('status'), version: g('version'), effective: g('effective'), evidence: g('evidence'), remark: g('remark'),
+      category: g('category'),
     };
     const err = (msg, field) => { const b = $('#edErr'); b.textContent = msg; b.hidden = false; if (field) form.querySelector(`[name="${field}"]`).focus(); };
     if (!d.statement) return err('Заполните атомарную формулировку.', 'statement');
@@ -1676,6 +2114,9 @@
       applyCard(dom, reqEl, d, ed.orig);
       const newId = reqEl.getAttribute('id');
       await commitDoc(e, dom);
+      const from = `${e.key}|${newId}`;
+      for (const t of ed.linksOrig.filter((x) => !ed.links.includes(x))) await removeLink({ from, to: t, relation: 'derives' });
+      for (const t of ed.links.filter((x) => !ed.linksOrig.includes(x))) await addLink({ from, to: t, relation: 'derives' });
       closeEditor();
       toast(ed.isNew ? 'Требование добавлено' : 'Карточка сохранена');
       if (ed.isNew && S.key === e.key) S.openAtoms.add(ed.clauseId);
@@ -1695,6 +2136,8 @@
       const dom = xdom(e);
       deleteReqEl(dom, ed.reqId);
       await commitDoc(e, dom);
+      const k = `${e.key}|${ed.reqId}`;
+      for (const l of W.links.filter((x) => x.from === k || x.to === k)) await removeLink(l);
       closeEditor();
       toast('Требование удалено');
       rerender();
@@ -1917,6 +2360,7 @@
     let h = `<nav class="ws-nav" aria-label="Рабочее пространство">
       <a href="#/"${cur('home')}>${ICON.docs}<span>Документы</span><span class="count">${W.docs.length}</span></a>
       <a href="#/common"${cur('common')}>${ICON.reg}<span>Общий реестр</span><span class="count">${commonList().length}</span></a>
+      <a href="#/graph"${cur('graph')}>${ICON.graph}<span>Граф требований</span><span class="count">${W.links.length || ''}</span></a>
       <a href="#/overlaps"${cur('overlaps')}>${ICON.ov}<span>Пересечения</span><span class="count${nOv ? ' hot' : ''}">${nOv}</span></a>
     </nav>`;
     if (W.docs.length) {
@@ -1973,7 +2417,7 @@
   function renderTabs(view, isWs) {
     let tabs;
     if (isWs) {
-      tabs = [['home', '#/', 'Документы', W.docs.length], ['common', '#/common', 'Общий реестр', commonList().length], ['overlaps', '#/overlaps', 'Пересечения', W.docs.length ? overlapPairs().length : 0]];
+      tabs = [['home', '#/', 'Документы', W.docs.length], ['common', '#/common', 'Общий реестр', commonList().length], ['graph', '#/graph', 'Граф требований', ''], ['overlaps', '#/overlaps', 'Пересечения', W.docs.length ? overlapPairs().length : 0]];
     } else {
       const m = M();
       const hasAuto = m.reqs.some((r) => r.verification && r.verification.checks.length);
@@ -2034,7 +2478,7 @@
 
   /* ---------- Роутинг ---------- */
   const DOC_VIEWS = { doc: viewDoc, req: viewReqs, registry: viewRegistry, roles: viewRoles, objects: viewObjects, links: viewLinks, check: viewCheck, notes: viewNotes };
-  const WS_VIEWS = { home: viewHome, common: viewCommon, overlaps: viewOverlaps };
+  const WS_VIEWS = { home: viewHome, common: viewCommon, overlaps: viewOverlaps, graph: viewGraph, account: viewAccount };
   function parseHash() {
     let raw = location.hash.replace(/^#\/?/, '');
     try { raw = decodeURIComponent(raw); } catch { /* оставляем как есть */ }
@@ -2102,12 +2546,18 @@
 
     const el = $('#view');
     el.innerHTML = (isWs ? WS_VIEWS : DOC_VIEWS)[view]();
-    el.className = 'view' + (view === 'doc' ? '' : ' wide');
+    el.className = 'view' + (view === 'doc' ? '' : view === 'graph' ? ' full' : ' wide');
     if (view === 'req') renderReqResults();
     if (view === 'registry') renderRegistryResults();
     if (view === 'common') renderCommonResults();
     if (view === 'overlaps') renderOverlapResults();
-    document.title = isWs ? `ИСМ XML — ${{ home: 'документы', common: 'общий реестр требований', overlaps: 'пересекающиеся требования' }[view]}` : `${S.m.id} — ${S.m.meta.title}`;
+    if (view === 'graph') {
+      if (fresh && params.get('doc')) G.sel = 'doc:' + params.get('doc');
+      if (fresh && params.get('req')) G.sel = params.get('req');
+      bindGraph(); renderGraph(false);
+    }
+    document.title = isWs ? `ИСМ XML — ${{ home: 'документы', common: 'общий реестр требований', overlaps: 'пересекающиеся требования', account: 'личный кабинет', graph: 'граф требований' }[view]}` : `${S.m.id} — ${S.m.meta.title}`;
+    if (view === 'account' && W.cloud) loadAccount();
     closeNav();
 
     if (keep) { window.scrollTo(0, y); }
@@ -2129,6 +2579,9 @@
     const e = S.m && S.m.entry;
     if (!isWs && e && e.builtin && e.overridden) {
       b.innerHTML = 'В опубликованный регламент внесены правки в этом браузере. Коллеги их не видят — передайте им XML из меню «Выгрузить». <button type="button" data-docreset="builtin">Сбросить правки</button>';
+      b.hidden = false;
+    } else if (W.loadError) {
+      b.innerHTML = `Документы из базы не загрузились: ${esc(W.loadError)} <button type="button" onclick="location.reload()">Обновить страницу</button>`;
       b.hidden = false;
     } else if (!W.storage) {
       b.innerHTML = 'Браузер не разрешает этому сайту хранить данные, поэтому загруженные документы и правки пропадут после закрытия вкладки. Скачивайте результаты в XML или Excel.';
@@ -2304,6 +2757,17 @@
       if ((x = on('[data-add]'))) { openEditor({ key: S.key, clauseId: x.dataset.add }); return; }
       if (on('[data-edclose]')) { closeEditor(); return; }
       if (on('#edDelete')) { deleteFromEditor(); return; }
+      if ((x = on('[data-amode]'))) { const em = $('#authForm [name="email"]'); if (em && em.value) A.email = em.value.trim(); setAuth(x.dataset.amode); return; }
+      if (on('#aResend')) { resendCode('signup'); return; }
+      if (on('#aResendReset')) { resendCode('reset'); return; }
+      if (on('#signOut') || on('#signOut2')) { signOut(); return; }
+      if (on('#migrateLocal')) { on('#migrateLocal').disabled = true; migrateLocal(); return; }
+      if (on('#edLinkAdd')) {
+        const v = $('#edLinkSel').value;
+        if (v && !S.edit.links.includes(v)) { S.edit.links.push(v); $('#edLinks').innerHTML = edLinksHtml(); }
+        return;
+      }
+      if ((x = on('[data-unlink]'))) { S.edit.links = S.edit.links.filter((k) => k !== x.dataset.unlink); $('#edLinks').innerHTML = edLinksHtml(); return; }
       if ((x = on('[data-copy]'))) { copyLink(x.dataset.copy); return; }
       if ((x = on('[data-row]'))) {
         const id = x.dataset.row;
@@ -2351,6 +2815,20 @@
         const lbl = $('#ovHidden') && $('#ovHidden').parentNode;
         if (lbl) lbl.lastChild.nodeValue = ` показать отмеченные «не дубль» (${W.dismissed.size})`;
         toast(W.dismissed.has(id) ? 'Пара отмечена «не дубль» и скрыта' : 'Пара возвращена в список');
+        return;
+      }
+      if ((x = on('[data-gf]'))) { G.f[x.dataset.gf] = x.dataset.v; renderGraph(true); $$(`[data-gf="${x.dataset.gf}"]`).forEach((b) => b.setAttribute('aria-pressed', String(b === x))); return; }
+      if ((x = on('[data-gz]'))) { if (x.dataset.gz === 'fit') graphFit(); else graphZoom(x.dataset.gz === 'in' ? 1 / 1.25 : 1.25); return; }
+      if ((x = on('[data-gsel]'))) { G.sel = x.dataset.gsel; renderGraph(true); return; }
+      if ((x = on('[data-gaccept]'))) {
+        const [from, to] = x.dataset.gaccept.split('>');
+        x.disabled = true;
+        addLink({ from, to, relation: 'derives' }).then(() => { toast('Основание добавлено'); renderGraph(true); renderSidebar(); renderTabs('graph', true); });
+        return;
+      }
+      if ((x = on('[data-gunlink]'))) {
+        const [from, to] = x.dataset.gunlink.split('>');
+        removeLink({ from, to, relation: 'derives' }).then(() => { toast('Основание убрано'); renderGraph(true); renderSidebar(); renderTabs('graph', true); });
         return;
       }
       if (on('#ovAll')) { S.of.req = ''; if (location.hash.includes('req=')) location.hash = '#/overlaps'; else renderOverlapResults(); return; }
@@ -2436,11 +2914,13 @@
       if (t.dataset.fsel) { S.f[t.dataset.fsel] = t.value; renderReqResults(); }
       if (t.dataset.csel) { S.cf[t.dataset.csel] = t.value; S.cf.limit = 300; renderCommonResults(); }
       if (t.id === 'ovMin') { renderSidebar(); renderTabs('overlaps', true); }
+      if (t.dataset.gt) { G.f[t.dataset.gt] = t.checked; renderGraph(true); }
       if (t.id === 'ovDoc') { S.of.doc = t.value; S.of.limit = 60; renderOverlapResults(); }
       if (t.id === 'ovHidden') { S.of.hidden = t.checked; renderOverlapResults(); }
       if (t.id === 'relSel') { S.linkRel = t.value; rerender(); }
       if (t.id === 'upLevel') S.upLevel = t.value;
       if (t.id === 'upInclude') S.upInclude = t.checked;
+      if (t.dataset.doctype) { setDocType(t.dataset.doctype, t.value); return; }
       if (t.dataset.include) {
         const e = entry(t.dataset.include);
         if (e) { e.included = t.checked; persist(e); bump(); rerender(); toast(t.checked ? 'Документ включён в общий реестр' : 'Документ исключён из общего реестра'); }
@@ -2463,7 +2943,27 @@
     });
 
     document.addEventListener('submit', (ev) => {
-      if (ev.target.id === 'edForm') { ev.preventDefault(); saveEditor(); }
+      const f = ev.target;
+      if (f.id === 'edForm') { ev.preventDefault(); saveEditor(); }
+      if (f.id === 'authForm') { ev.preventDefault(); submitAuth(f); }
+      if (f.id === 'profileForm') {
+        ev.preventDefault();
+        const name = norm(new FormData(f).get('full_name'));
+        window.ISM.cloud.auth.updateProfile({ full_name: name }).then(() => { S.profile = { ...(S.profile || {}), full_name: name }; toast('Имя сохранено'); })
+          .catch((err) => toast('Не удалось сохранить: ' + err.message, 5000));
+      }
+      if (f.id === 'passwordForm') {
+        ev.preventDefault();
+        const fd = new FormData(f);
+        const pw = String(fd.get('password') || '');
+        const box = $('#accErr');
+        const err = (m) => { box.textContent = m; box.hidden = false; };
+        if (pw.length < 8) return err('Пароль должен быть не короче 8 символов.');
+        if (pw !== String(fd.get('password2') || '')) return err('Пароли не совпадают.');
+        box.hidden = true;
+        window.ISM.cloud.auth.setPassword(pw).then(() => { f.reset(); toast('Пароль изменён'); }).catch((e2) => err(e2.message));
+      }
+      return undefined;
     });
     $('#editor').addEventListener('cancel', () => { S.edit = null; });
     $('#editor').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) closeEditor(); });
@@ -2523,13 +3023,267 @@
   /* ---------- Запуск ---------- */
   async function boot() {
     bindGlobal();
+    const cloud = window.ISM.cloud;
+    if (cloud && cloud.enabled) {
+      W.cloud = true;
+      let session = null;
+      try { session = await cloud.auth.session(); } catch (e) { A.err = e.message; }
+      if (!session) { renderAuth(); return; }
+      W.user = session.user;
+    }
+    await startApp();
+  }
+  async function startApp() {
     try {
+      document.body.classList.remove('auth-mode');
+      $('#auth').hidden = true;
+      renderUser();
       await initWorkspace();
       if (S.key) useDoc(S.key);
+      if (W.cloud) {
+        window.ISM.cloud.auth.onChange((event) => { if (event === 'SIGNED_OUT' && W.user) { W.user = null; location.reload(); } });
+        checkLocalDocs();
+      }
       render();
     } catch (e) {
       $('#view').innerHTML = `<div class="empty"><p><b>Не удалось запустить приложение.</b> ${esc(e.message)}</p></div>`;
     }
+  }
+
+  /* ---------- Вход, регистрация, подтверждение почты ---------- */
+  const A = { mode: 'login', email: '', err: '', msg: '', busy: false, until: 0, timer: null };
+  const authField = (name, label, type, extra = '') => `<label class="fld"><span>${label}</span><input name="${name}" type="${type}" ${extra}></label>`;
+  function renderAuth() {
+    document.body.classList.add('auth-mode');
+    const box = $('#auth');
+    box.hidden = false;
+    const email = esc(A.email);
+    const forms = {
+      login: `<h2>Вход</h2>
+        ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
+        ${authField('password', 'Пароль', 'password', 'autocomplete="current-password" required')}
+        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Войти</button>
+        <p class="auth-links"><button type="button" class="link-btn" data-amode="reset">Забыли пароль?</button><span>Нет учётной записи? <button type="button" class="link-btn" data-amode="signup">Зарегистрироваться</button></span></p>`,
+      signup: `<h2>Регистрация</h2>
+        ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
+        ${authField('password', 'Пароль', 'password', 'autocomplete="new-password" minlength="8" required')}
+        ${authField('password2', 'Пароль ещё раз', 'password', 'autocomplete="new-password" minlength="8" required')}
+        <p class="auth-hint">Не короче 8 символов. На почту придёт код подтверждения — его нужно ввести здесь же.</p>
+        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Зарегистрироваться</button>
+        <p class="auth-links"><span>Уже зарегистрированы? <button type="button" class="link-btn" data-amode="login">Войти</button></span></p>`,
+      verify: `<h2>Подтвердите почту</h2>
+        <p class="auth-lead">Мы отправили код на <b>${email}</b>. Введите его, чтобы завершить регистрацию. Письмо может попасть в «Спам».</p>
+        <label class="fld"><span>Код из письма</span><input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" required></label>
+        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Подтвердить</button>
+        <p class="auth-links"><button type="button" class="link-btn" id="aResend">Отправить код ещё раз</button><button type="button" class="link-btn" data-amode="signup">Изменить почту</button></p>`,
+      reset: `<h2>Восстановление пароля</h2>
+        <p class="auth-lead">Пришлём на почту код, после него можно задать новый пароль.</p>
+        ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
+        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Получить код</button>
+        <p class="auth-links"><button type="button" class="link-btn" data-amode="login">Вернуться ко входу</button></p>`,
+      'reset-code': `<h2>Новый пароль</h2>
+        <p class="auth-lead">Код отправлен на <b>${email}</b>.</p>
+        <label class="fld"><span>Код из письма</span><input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" required></label>
+        ${authField('password', 'Новый пароль', 'password', 'autocomplete="new-password" minlength="8" required')}
+        ${authField('password2', 'Новый пароль ещё раз', 'password', 'autocomplete="new-password" minlength="8" required')}
+        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Сменить пароль и войти</button>
+        <p class="auth-links"><button type="button" class="link-btn" id="aResendReset">Отправить код ещё раз</button><button type="button" class="link-btn" data-amode="login">Вернуться ко входу</button></p>`,
+    };
+    box.innerHTML = `<div class="auth-wrap">
+      <section class="auth-intro">
+        <div class="auth-brand"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="22"/><path d="M3 19h26M17 19v8M9 11h12"/></svg><b>ИСМ XML</b></div>
+        <h1>Реестр требований ИСМ</h1>
+        <ul>
+          <li>Загрузка регламентов из Word, PDF, Excel и XML, разметка атомарных требований</li>
+          <li>Бизнес- и системные требования, владельцы, критичность, карточки корпоративного реестра</li>
+          <li>Граф требований по уровням документов: от политик до записей</li>
+          <li>Ваши документы видите только вы</li>
+        </ul>
+      </section>
+      <section class="auth-card">
+        <form id="authForm" data-mode="${A.mode}" novalidate>
+          ${forms[A.mode]}
+          <p class="auth-msg" id="aMsg"${A.msg ? '' : ' hidden'}>${esc(A.msg)}</p>
+          <p class="auth-err" id="aErr" role="alert"${A.err ? '' : ' hidden'}>${esc(A.err)}</p>
+        </form>
+      </section>
+    </div>`;
+    tickResend();
+    const first = box.querySelector(A.mode === 'verify' || A.mode === 'reset-code' ? '[name="code"]' : A.email ? '[name="password"]' : '[name="email"]');
+    if (first) first.focus();
+  }
+  function setAuth(mode, { err = '', msg = '' } = {}) { A.mode = mode; A.err = err; A.msg = msg; A.busy = false; renderAuth(); }
+  function tickResend() {
+    clearInterval(A.timer);
+    const btn = $('#aResend') || $('#aResendReset');
+    if (!btn) return;
+    const upd = () => {
+      const left = Math.ceil((A.until - Date.now()) / 1000);
+      btn.disabled = left > 0;
+      btn.textContent = left > 0 ? `Отправить код ещё раз через ${left} с` : 'Отправить код ещё раз';
+      if (left <= 0) clearInterval(A.timer);
+    };
+    upd();
+    A.timer = setInterval(upd, 1000);
+  }
+  async function submitAuth(form) {
+    const fd = new FormData(form);
+    const v = (k) => String(fd.get(k) || '').trim();
+    const auth = window.ISM.cloud.auth;
+    const showErr = (m) => { A.busy = false; A.err = m; const e = $('#aErr'); e.textContent = m; e.hidden = false; form.querySelector('[type="submit"]').disabled = false; };
+    const email = v('email') || A.email;
+    if (A.mode !== 'verify' && A.mode !== 'reset-code' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('Введите почту в формате name@example.ru.');
+    if ((A.mode === 'signup' || A.mode === 'reset-code') && v('password').length < 8) return showErr('Пароль должен быть не короче 8 символов.');
+    if ((A.mode === 'signup' || A.mode === 'reset-code') && v('password') !== v('password2')) return showErr('Пароли не совпадают.');
+    if ((A.mode === 'verify' || A.mode === 'reset-code') && !/^\d{6,10}$/.test(v('code').replace(/\s/g, ''))) return showErr('Код — это 6 цифр из письма.');
+    A.busy = true; A.email = email;
+    form.querySelector('[type="submit"]').disabled = true;
+    $('#aErr').hidden = true;
+    try {
+      if (A.mode === 'login') {
+        const session = await auth.signIn(email, v('password'));
+        W.user = session.user;
+        return await startApp();
+      }
+      if (A.mode === 'signup') {
+        const res = await auth.signUp(email, v('password'));
+        if (!res.needCode) { W.user = res.session.user; return await startApp(); }
+        A.until = Date.now() + 60000;
+        return setAuth('verify');
+      }
+      if (A.mode === 'verify') {
+        const session = await auth.verifySignup(email, v('code').replace(/\s/g, ''));
+        W.user = session.user;
+        toast('Почта подтверждена, добро пожаловать');
+        return await startApp();
+      }
+      if (A.mode === 'reset') {
+        await auth.requestReset(email);
+        A.until = Date.now() + 60000;
+        return setAuth('reset-code');
+      }
+      if (A.mode === 'reset-code') {
+        const session = await auth.verifyReset(email, v('code').replace(/\s/g, ''));
+        await auth.setPassword(v('password'));
+        W.user = session.user;
+        toast('Пароль изменён');
+        return await startApp();
+      }
+    } catch (err) {
+      if (A.mode === 'login' && /не подтверждена/.test(err.message)) {
+        A.until = 0;
+        return setAuth('verify', { err: err.message });
+      }
+      return showErr(err.message);
+    }
+    return undefined;
+  }
+  async function resendCode(kind) {
+    const auth = window.ISM.cloud.auth;
+    try {
+      if (kind === 'reset') await auth.requestReset(A.email); else await auth.resend(A.email);
+      A.until = Date.now() + 60000;
+      A.err = ''; A.msg = `Новый код отправлен на ${A.email}.`;
+      renderAuth();
+    } catch (err) { A.err = err.message; A.msg = ''; renderAuth(); }
+  }
+  async function signOut() {
+    try { await window.ISM.cloud.auth.signOut(); } catch { /* сеанс уже закрыт */ }
+    W.user = null;
+    history.replaceState(null, '', location.pathname + location.search);
+    location.reload();
+  }
+
+  // Меню пользователя в верхней панели
+  function renderUser() {
+    const menu = $('#userMenu');
+    if (!W.cloud || !W.user) { menu.hidden = true; return; }
+    const email = W.user.email || '';
+    menu.hidden = false;
+    $('#userMenu summary').innerHTML = `<span class="avatar" aria-hidden="true">${esc(email.charAt(0).toUpperCase() || '?')}</span><span class="sr-only">Личный кабинет</span>`;
+    $('#userPanel').innerHTML = `<p class="menu-cap">Вы вошли как</p><p class="user-email">${esc(email)}</p>
+      <a role="menuitem" class="dm-item" href="#/account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><b>Личный кабинет</b><span>учётная запись, пароль, данные</span></span></a>
+      <button type="button" role="menuitem" id="signOut"><b>Выйти</b><span>завершить сеанс на этом устройстве</span></button>`;
+  }
+
+  /* ---------- Личный кабинет ---------- */
+  function viewAccount() {
+    let h = '<div class="page-head"><div><h1>Личный кабинет</h1><p>Учётная запись и ваши данные в базе. Документы и карточки видите только вы.</p></div></div>';
+    if (!W.cloud) {
+      return h + `<div class="acc-grid"><section class="acc-card"><h2>Вход не подключён</h2>
+        <p>Приложение работает без учётных записей: документы хранятся только в этом браузере. Регистрация по почте, личный кабинет и база данных включаются, когда администратор подключает проект Supabase — инструкция в README репозитория, раздел «База данных и вход».</p></section></div>`;
+    }
+    const u = W.user || {};
+    const p = S.profile || {};
+    const all = models();
+    const reqs = all.flatMap((m) => m.reqs);
+    const nSys = reqs.filter((r) => r.category === 'system').length;
+    const dt = (x) => (x ? new Date(x).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' }) : '—');
+    h += `<div class="acc-grid">
+      <section class="acc-card"><h2>Учётная запись</h2>
+        <dl class="acc-dl">
+          <dt>Почта</dt><dd>${esc(u.email || '')} ${u.email_confirmed_at || u.confirmed_at ? '<span class="chip shall">подтверждена</span>' : '<span class="chip shall-not">не подтверждена</span>'}</dd>
+          <dt>Зарегистрирован</dt><dd>${esc(dt(u.created_at))}</dd>
+          <dt>Последний вход</dt><dd>${esc(dt(u.last_sign_in_at))}</dd>
+        </dl>
+        <form id="profileForm" class="acc-form"><label class="fld"><span>Имя (необязательно)</span><input name="full_name" value="${esc(p.full_name || '')}" autocomplete="name"></label>
+          <button type="submit" class="btn btn-sm">Сохранить имя</button></form>
+      </section>
+      <section class="acc-card"><h2>Пароль</h2>
+        <form id="passwordForm" class="acc-form">
+          <label class="fld"><span>Новый пароль</span><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
+          <label class="fld"><span>Ещё раз</span><input name="password2" type="password" minlength="8" autocomplete="new-password" required></label>
+          <button type="submit" class="btn btn-sm">Сменить пароль</button>
+        </form>
+        <p class="acc-err" id="accErr" hidden></p>
+        <button type="button" class="btn danger" id="signOut2">Выйти из учётной записи</button>
+      </section>
+      <section class="acc-card wide"><h2>Мои данные в базе</h2>
+        <div class="acc-stats">
+          <div><span class="lbl">Документов</span><b>${all.length}</b></div>
+          <div><span class="lbl">Требований</span><b>${reqs.length}</b></div>
+          <div><span class="lbl">Бизнес / системные</span><b><span class="cb">${reqs.length - nSys}</span> / <span class="cs">${nSys}</span></b></div>
+          <div><span class="lbl">Связей-оснований</span><b>${W.links.length}</b></div>
+        </div>
+        <p class="muted">База данных: ${esc(window.ISM.cloud.host)}. Таблицы: виды документов, документы, требования, связи требований, отметки «не дубль», настройки. Доступ к строкам ограничен вашей учётной записью.</p>
+        <div class="head-actions"><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Скачать всё одним архивом</button><a class="btn btn-sm" href="#/">${ICON.docs}К документам</a></div>
+      </section>
+    </div>`;
+    return h;
+  }
+  async function loadAccount() {
+    if (S.profileLoaded) return;
+    S.profileLoaded = true;
+    try { S.profile = await window.ISM.cloud.auth.profile(); const i = $('#profileForm [name="full_name"]'); if (i && S.profile.full_name) i.value = S.profile.full_name; } catch { /* профиль необязателен */ }
+  }
+
+  // Документы, загруженные в этом браузере до входа, — предложить перенести в базу
+  async function checkLocalDocs() {
+    try {
+      const local = (await window.ISM.store.allDocs()).filter((d) => d.key !== BUILTIN && d.xml);
+      const done = new Set((await window.ISM.store.getMeta('migrated', [])) || []);
+      S.localDocs = local.filter((d) => !done.has(`${W.user.id}:${d.key}`) && !entry(d.key));
+      if (S.localDocs.length && parseHash().view === 'home') rerender();
+    } catch { S.localDocs = []; }
+  }
+  async function migrateLocal() {
+    const list = S.localDocs || [];
+    const done = new Set((await window.ISM.store.getMeta('migrated', [])) || []);
+    let n = 0;
+    for (const d of list) {
+      const e = { key: d.key, name: d.name, kind: d.kind, xml: d.xml, addedAt: d.addedAt, included: d.included !== false, report: d.report || {}, level: d.level };
+      W.docs.push(e);
+      W.models.delete(e.key);
+      if (!modelOf(e)) { W.docs.pop(); continue; }
+      await persist(e);
+      done.add(`${W.user.id}:${d.key}`);
+      n++;
+    }
+    await window.ISM.store.setMeta('migrated', Array.from(done));
+    S.localDocs = [];
+    bump();
+    toast(`Перенесено в базу: ${pl(n, 'документ', 'документа', 'документов')}`);
+    rerender();
   }
   window.ISM = window.ISM || {};
   window.ISM.app = { state: S, workspace: W, render };

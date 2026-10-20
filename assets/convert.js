@@ -315,7 +315,7 @@
     const pm = procLine.match(/^([A-ZА-ЯЁ]\d+(?:\.\d+)*)\s+(.*)$/);
     const md = el('metadata', {}, [
       el('title', {}, meta.title || opts.fileStem),
-      el('documentType', { code: meta.docCode || '' }, meta.docType || docTypeFromCode(meta.docCode) || 'Документ'),
+      el('documentType', { code: typeOf(meta.docCode, meta.docType, meta.title) || meta.docCode || '' }, DOC_TYPES[typeOf(meta.docCode, meta.docType, meta.title)] || meta.docType || 'Документ'),
       ...(meta.org ? [el('organization', {}, meta.org)] : []),
       el('processRef', { id: pm ? pm[1] : '' }, pm ? pm[2] : procLine || 'не указан'),
       ...((meta.processLines || []).length > 1 ? [el('processPath', {}, meta.processLines.map((l) => { const x = l.match(/^([A-ZА-ЯЁ]\d+(?:\.\d+)*)\s+(.*)$/); return el('process', { id: x ? x[1] : '' }, x ? x[2] : l); }).filter((p) => p.a.id))] : []),
@@ -345,7 +345,7 @@
       }));
       return el('table', {}, rows.length > 1 ? [el('head', {}, rows[0]), ...rows.slice(1).map((r) => el('row', {}, r))] : rows.map((r) => el('row', {}, r)));
     }));
-    const reqNode = (r) => el('requirement', { id: r.id, number: r.number, modality: r.modality, modalityBasis: r.basis, source: r.source }, [
+    const reqNode = (r) => el('requirement', { id: r.id, number: r.number, modality: r.modality, modalityBasis: r.basis, category: categoryOf(r.statement), categoryStatus: 'preliminary', source: r.source }, [
       el('title', {}, r.title), el('statement', {}, r.statement), el('quote', {}, r.quote),
       ...(r.objId ? [el('object', { ref: r.objId })] : []),
       el('registry', { id: r.temp, level, status: 'draft', version: '0.1' }, [el('remark', {}, `Карточка создана автоматически из файла «${opts.fileName}»: наименование${r.objId ? ' и объект' : ''} предложены по тексту; владелец, критичность и критерий приёмки не заполнены.`)]),
@@ -389,8 +389,67 @@
     if (o.split(/\s+/).length > 9 || /[,;]/.test(o)) return '';
     return upperFirst(o);
   }
-  const DOC_TYPES = { MTH: 'Методика', REG: 'Регламент', PLC: 'Положение', STD: 'Стандарт', INS: 'Инструкция', PRC: 'Процедура', POL: 'Политика', TZ: 'Техническое задание' };
-  const docTypeFromCode = (c) => (c ? DOC_TYPES[c.toUpperCase()] : '');
+  /* ---------- Виды документов ИСМ (иерархия: 4 уровня и внешняя документация) ---------- */
+  const DOC_LEVELS = [
+    { level: 1, name: '1 уровень', purpose: 'стратегическое управление, принятие решений, контроль деятельности' },
+    { level: 2, name: '2 уровень', purpose: 'управление деятельностью применительно к процессам' },
+    { level: 3, name: '3 уровень', purpose: 'исполнение деятельности' },
+    { level: 4, name: '4 уровень', purpose: 'свидетельства о выполнении требований' },
+  ];
+  const DOC_TYPE_LIST = [
+    { code: 'GPL', name: 'Политика', level: 1, description: 'Устанавливает общие требования. Характеризуется широкой областью применения и низкой детализацией' },
+    { code: 'GOAL', name: 'Цели', level: 1, description: 'Официально зафиксированные ожидаемые результаты деятельности' },
+    { code: 'GDL', name: 'Руководство', level: 1, description: 'Содержит изложение руководящих принципов и основных направлений развития деятельности Предприятия' },
+    { code: 'PLC', name: 'Положение', level: 2, description: 'Определяет общие правила и требования к реализации конкретного направления деятельности/процесса — что делаем' },
+    { code: 'PCD', name: 'Процедура', level: 2, description: 'Описывает этапы процесса: состав, последовательность, сроки, ответственность, требования к результату и способы его измерения — как делаем' },
+    { code: 'STD', name: 'Стандарт', level: 2, description: 'Устанавливает требования к процессу верхнего уровня и его реализации' },
+    { code: 'RGL', name: 'Регламент', level: 2, description: 'Описывает состав, структуру и порядок управления процессом' },
+    { code: 'SOP', name: 'Стандартная операционная процедура', level: 2, description: 'Содержит только схему процесса, описание ролей и краткое описание процесса на одну-две страницы' },
+    { code: 'MTH', name: 'Методика', level: 3, description: 'Содержит конкретные приёмы, техники, технологии и инструменты практических действий в процессах' },
+    { code: 'INS', name: 'Инструкция', level: 3, description: 'Свод правил, устанавливающий, разъясняющий и детально раскрывающий порядок и способы выполнения действий' },
+    { code: 'REC', name: 'Записи и отчёты', level: 4, description: 'Информация о достигнутых результатах или свидетельства деятельности: шаблоны, чек-листы, журналы, реестры, перечни' },
+    { code: 'EXT', name: 'Внешняя документация', level: null, description: 'Документация, созданная за пределами Предприятия: законодательная база, постановления Правительства, ГОСТы, ОСТы, СНиПы, ТУ' },
+  ];
+  const DOC_TYPES = Object.fromEntries(DOC_TYPE_LIST.map((t) => [t.code, t.name]));
+  const TYPE_ALIAS = { POL: 'GPL', PRC: 'PCD', REG: 'RGL', PROC: 'PCD', INSTR: 'INS', MET: 'MTH', GOST: 'EXT' };
+  const TYPE_WORDS = [
+    [/^стандартн\S* операционн\S* процедур/i, 'SOP'], [/^политик/i, 'GPL'], [/^цел[ьи](?![а-яё])/i, 'GOAL'], [/^руководств/i, 'GDL'],
+    [/^положени/i, 'PLC'], [/^процедур/i, 'PCD'], [/^(стандарт|ст[ао]\s)/i, 'STD'], [/^регламент/i, 'RGL'], [/^методик/i, 'MTH'], [/^инструкци/i, 'INS'],
+    [/^(реестр|журнал|отч[её]т|чек-?лист|перечень|шаблон|запис[ьи]|протокол|акт)(?![а-яё])/i, 'REC'],
+    [/^(гост|ост|снип|сп\s|ту\s|федеральн\S* закон|постановлени|приказ|iso|исо)/i, 'EXT'],
+  ];
+  // Вид документа по коду (MTH), названию вида («Методика») или заголовку документа
+  function typeOf(code, name, title) {
+    const c = String(code || '').toUpperCase();
+    if (DOC_TYPES[c]) return c;
+    if (TYPE_ALIAS[c]) return TYPE_ALIAS[c];
+    for (const s of [name, title]) {
+      const t = String(s || '').trim();
+      const hit = t && TYPE_WORDS.find(([rx]) => rx.test(t));
+      if (hit) return hit[1];
+    }
+    return '';
+  }
+  const docTypeFromCode = (c) => DOC_TYPES[typeOf(c)] || '';
+
+  /* ---------- Бизнес- или системное требование ---------- */
+  // Системное — требование к информационной системе: её функциям, данным, интерфейсам, качеству работы.
+  // Бизнес-требование — к процессу, людям, подразделениям, документам.
+  const IT_SUBJECT = /(?<![а-яё])(систем[аеуыой]{0,2}(?!\s+(менеджмент|управлени[яе] качеств|качеств|мотиваци|ценност|оплат|стимулир))|модул[ьяюеи]\S*|программ\S*|приложени[еяю](?!\s+[\dа-яёa-z](?![а-яёa-z0-9]))|сервис\S*|портал\S*|интерфейс\S*|баз\S* данных|функционал\S*|сервер\S*)(?![а-яё])/iu;
+  const IT_ABBR = /(?<![А-ЯЁа-яёA-Za-z])(ИС|АС|АСУ[А-ЯЁ]*|ПО|БД|API|ERP|САПР|PLM)(?![А-ЯЁа-яёA-Za-z])/u;
+  const DOC_SUBJECT = /(?<![а-яё])(раздел\S*|пункт\S*|подраздел\S*|документ\S*|описани\S*|перечень|схем\S*|диаграмм\S*|модел\S*|фм|глав\S*|таблиц\S*|приложени[ея]\s+[\dа-яёa-z](?![а-яёa-z0-9]))(?![а-яё])/iu;
+  const IT_BEHAVIOR = /(автоматическ\S*|в (информационной )?системе\s+должн|системой\s+должн|средствами\s+(системы|ис|по)|интеграци\S* с\s|время отклика|резервн\S* копир|разграничени\S* (прав )?доступа|авторизац\S*|аутентификац\S*|шифрован\S*|журнал\S* (событий|аудита)|логировани\S*|отказоустойчив\S*|производительност\S* системы|(?<![а-яё])api(?![а-яё])|(пользовател\S*|оператор\S*)\s+должн\S*\s+(иметь возможность|мочь)|возможност\S* (выгруз|загруз|просмотр|редактир|формирова|поиск|печат|экспорт|импорт|фильтр)\S*)/iu;
+  const MODAL_ANY = new RegExp(`${B}(не\\s+)?(долж(?:ен|на|но|ны)|следует|необходимо|обязан[аоы]?|требу(?:ется|ются)|подлеж(?:ит|ат)|надлежит|рекоменду(?:ется|ются)|допуска(?:ется|ются)|запрещ\\S*|обеспечива\\S*|позволя\\S*|формиру\\S*)${E}`, 'iu');
+  function categoryOf(text) {
+    const t = String(text || '');
+    const mm = MODAL_ANY.exec(t);
+    if (!mm) return IT_BEHAVIOR.test(t) ? 'system' : 'business'; // без модального слова подлежащее не выделить
+    const subject = t.slice(0, mm.index);
+    if (DOC_SUBJECT.test(subject)) return IT_BEHAVIOR.test(t) && !/описани|раздел/i.test(subject) ? 'system' : 'business';
+    if (IT_SUBJECT.test(subject) || IT_ABBR.test(subject)) return 'system';
+    if (IT_BEHAVIOR.test(t)) return 'system';
+    return 'business';
+  }
 
   /* ---------- .docx ---------- */
   const wkids = (e, name) => (e ? Array.from(e.childNodes).filter((n) => n.nodeType === 1 && n.localName === name && n.namespaceURI === W) : []);
@@ -642,7 +701,7 @@
     ['id', /^id$/i], ['title', /^наименование$/i], ['object', /^объект/i], ['statement', /формулировка/i], ['source', /^источник/i],
     ['clause', /^пункт/i], ['level', /^уровень$/i], ['owner', /^владелец/i], ['scope', /^область/i], ['crit', /^критичность$/i],
     ['method', /^метод/i], ['criterion', /^критерий/i], ['status', /^статус$/i], ['version', /^версия$/i], ['effective', /^дата вступления/i],
-    ['evidence', /^ссылка на подтверждение/i], ['remark', /^(разногласия|примечание)/i],
+    ['evidence', /^ссылка на подтверждение/i], ['remark', /^(разногласия|примечание)/i], ['category', /^тип требования/i],
   ];
   const STATUS_CODE = { 'черновик': 'draft', 'на проверке оператора': 'operator-review', 'на согласовании': 'approval', 'утверждено': 'approved', 'действует': 'effective', 'на пересмотре': 'revision', 'заменено': 'superseded', 'архив': 'archived' };
   // Чтение .xlsx без внешних библиотек, кроме JSZip: общие строки, встроенные строки, числа, кэш формул
@@ -733,7 +792,9 @@
       const lvl = /^L[1-6]$/i.test(c.level) ? c.level.toUpperCase() : '';
       const eff = /^\d{4}-\d{2}-\d{2}$/.test(c.effective) ? c.effective : (c.effective.match(/^(\d{2})\.(\d{2})\.(\d{4})$/) ? c.effective.replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, '$3-$2-$1') : '');
       const remarkParts = [c.remark, c.effective && !eff ? `Дата вступления: ${c.effective}` : ''].filter(Boolean);
-      const req = el('requirement', { id: uid(`REQ-${code}-${String(i + 1).padStart(3, '0')}`), number: c.clause, modality: mod || 'shall', modalityBasis: found && found === mod ? 'explicit' : 'implicit', criticality: crit, source: 'authoritative' }, [
+      const cat = c.category === 'business' || c.category === 'system' ? c.category : (/систем/i.test(c.category || '') ? 'system' : /бизнес/i.test(c.category || '') ? 'business' : categoryOf(st));
+      const catSt = c.categoryStatus || (c.category ? 'confirmed' : 'preliminary');
+      const req = el('requirement', { id: uid(`REQ-${code}-${String(i + 1).padStart(3, '0')}`), number: c.clause, modality: mod || 'shall', modalityBasis: found && found === mod ? 'explicit' : 'implicit', category: cat, categoryStatus: catSt === 'confirmed' ? 'confirmed' : 'preliminary', criticality: crit, source: 'authoritative' }, [
         ...(c.title ? [el('title', {}, c.title)] : []),
         el('statement', {}, st), el('quote', {}, st),
         ...(c.object ? [el('object', { ref: refOf(objects, 'OBJ', c.object) })] : []),
@@ -755,13 +816,16 @@
       sec.items.push(clauses[i]);
     });
     const root = el('ismDocument', { xmlns: NS, 'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance', 'xsi:schemaLocation': `${NS} ism-regulation-v1.xsd`, id: opts.docId || opts.fileStem, version: opts.version || 'не указана', status: 'draft' }, [
-      el('metadata', {}, [el('title', {}, opts.title || `Реестр требований «${opts.fileStem}»`), el('documentType', { code: 'REG' }, 'Реестр требований'), el('processRef', { id: '' }, 'не указан'), el('owner', { role: 'process-owner' }, 'не указан')]),
+      el('metadata', {}, [el('title', {}, opts.title || `Реестр требований «${opts.fileStem}»`), el('documentType', { code: 'REC' }, 'Реестр требований'), el('processRef', { id: '' }, 'не указан'), el('owner', { role: 'process-owner' }, 'не указан')]),
     ]);
     if (roles.size) root.c.push(el('roles', {}, Array.from(roles.values()).map((r) => el('role', { id: r.id, type: 'org-unit' }, [el('name', {}, r.name)]))));
     if (objects.size) root.c.push(el('objects', {}, Array.from(objects.values()).map((o) => el('object', { id: o.id, type: 'object' }, [el('name', {}, o.name)]))));
     root.c.push(el('body', {}, groups.length > 1 || (groups[0] && groups[0].g)
       ? groups.map((g, k) => el('section', { id: uid(`S-${ncname(g.g.slice(0, 32), 'doc')}`), number: String(k + 1), title: g.g || 'Без источника' }, g.items))
       : [el('section', { id: uid('S-REG'), title: `Карточки реестра, лист «${sheetName}»` }, clauses)]));
+    // Основания между карточками (граф требований): нижестоящее требование реализует вышестоящее
+    const links = (opts.links || []).filter((l) => cards[l.a] && cards[l.b] && cards[l.a].reqId && cards[l.b].reqId);
+    if (links.length) root.c.push(el('semanticLinks', {}, links.map((l) => el('link', { from: cards[l.a].reqId, to: cards[l.b].reqId, relation: l.relation || 'implements' }))));
     const notes = [el('note', { id: uid('EN-AUTO'), type: 'interpretation' }, opts.note || `Карточки загружены из Excel-реестра «${opts.fileName}», лист «${sheetName}»: ${cards.length} шт. Текст исходных документов в реестре отсутствует, поэтому пункт каждой карточки содержит только её формулировку; источник и пункт сохранены в карточке.`)];
     // Пересечения между карточками (общий реестр): замечание к первой карточке пары
     (opts.pairs || []).forEach((p, k) => {
@@ -811,5 +875,5 @@
 
   window.ISM = window.ISM || {};
   const fromCards = (cards, opts) => buildFromCards(cards, opts.sheetName || '', opts);
-  window.ISM.convert = { fromFile, fromCards, modalityOf, sentences, loadScript, VENDOR };
+  window.ISM.convert = { fromFile, fromCards, modalityOf, categoryOf, typeOf, DOC_TYPE_LIST, DOC_LEVELS, sentences, loadScript, VENDOR };
 })();
