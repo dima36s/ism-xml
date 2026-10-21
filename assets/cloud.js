@@ -1,5 +1,6 @@
 /* ИСМ XML — личный кабинет и база данных Supabase.
-   Вход: регистрация по почте и паролю, подтверждение почты кодом из письма, затем вход по почте и паролю.
+   Вход: регистрация по почте и паролю и вход по почте и паролю, без подтверждения почты
+   (в проекте Supabase выключено Authentication → Sign In / Providers → Email → Confirm email).
    Учётные записи и пароли хранит Supabase Auth; документы, требования, связи — таблицы из supabase/setup.sql.
    Хранилище повторяет интерфейс ISM.store (store.js), поэтому приложение работает с ним так же, как с IndexedDB. */
 (() => {
@@ -9,7 +10,7 @@
   const SDK = 'assets/vendor/supabase.js'; // supabase-js 2.117.2, MIT; ключ sb_publishable_ передаётся только в заголовке apikey
   let sb = null;
   let uid = null;
-  // Возврат по ссылке из письма: Supabase дописывает к адресу #access_token=…&type=signup|recovery или #error=…
+  // Старые ссылки из писем Supabase (#access_token=… или #error=…): сеанс подхватывается, адрес очищается
   const APP_URL = location.origin + location.pathname;
   const hashParams = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
   const urlEvent = hashParams.has('access_token') ? (hashParams.get('type') || 'signin')
@@ -34,12 +35,11 @@
     const sec = msg.match(/after (\d+) seconds?/i);
     const map = [
       [/invalid login credentials/i, 'Неверная почта или пароль.'],
-      [/email not confirmed/i, 'Почта ещё не подтверждена. Введите код из письма или запросите новый.'],
-      [/otp_expired|link is invalid or has expired/i, 'Ссылка из письма устарела или уже использована. Войдите паролем или запросите новое письмо.'],
-      [/token has expired|otp.*(expired|invalid)|invalid.*(otp|token)/i, 'Код неверный или устарел. Запросите новый код.'],
-      [/user already registered|already been registered/i, 'Эта почта уже зарегистрирована. Войдите или восстановите пароль.'],
-      [/email address not authorized/i, 'Сервер не может отправить письмо на этот адрес: в Supabase не подключён свой почтовый сервер (SMTP). Без него письма получают только участники команды проекта.'],
-      [/rate limit|too many/i, 'Слишком много писем за короткое время. Подождите и попробуйте снова.'],
+      [/email not confirmed/i, 'Почта не подтверждена.'],
+      [/user already registered|already been registered|user_already_exists/i, 'Эта почта уже зарегистрирована. Войдите со своим паролем.'],
+      // Supabase пытается отправить письмо, только если в проекте осталось включено подтверждение почты
+      [/email address not authorized|error sending confirmation/i, 'Почта не подтверждена: Supabase требует письмо с подтверждением.'],
+      [/rate limit|too many/i, 'Слишком много попыток за короткое время. Подождите и попробуйте снова.'],
       [/password should be at least (\d+)/i, 'Пароль слишком короткий.'],
       [/weak password|password.*(weak|pwned)/i, 'Пароль слишком простой. Используйте буквы разного регистра, цифры и знаки.'],
       [/unable to validate email|invalid format|email.*invalid/i, 'Неверный формат почты.'],
@@ -50,7 +50,7 @@
       [/could not find the (table|function)|schema cache|relation .* does not exist|function .* does not exist|PGRST20[25]/i, 'База данных проекта ещё не настроена: выполните supabase/setup.sql в SQL Editor Supabase.'],
       [/jwt|not authenticated|нужно войти/i, 'Сеанс истёк. Войдите снова.'],
     ];
-    if (sec) return `Повторно запросить код можно через ${sec[1]} с.`;
+    if (sec) return `Повторить можно через ${sec[1]} с.`;
     const hit = map.find(([rx]) => rx.test(msg));
     return hit ? hit[1] : msg || 'Неизвестная ошибка сервера.';
   }
@@ -68,24 +68,12 @@
     async signUp(email, password) {
       const c = await client();
       const data = check(await c.auth.signUp({ email, password, options: { emailRedirectTo: APP_URL } }));
-      // Для уже подтверждённой почты Supabase возвращает пользователя без identities и письмо не шлёт
+      // Для уже зарегистрированной почты Supabase может вернуть пользователя без identities
       if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-        throw new Error('Эта почта уже зарегистрирована. Войдите или восстановите пароль.');
+        throw new Error('Эта почта уже зарегистрирована. Войдите со своим паролем.');
       }
       if (data.session) uid = data.session.user.id;
-      return { needCode: !data.session, session: data.session };
-    },
-    async verifySignup(email, code) {
-      const c = await client();
-      let res = await c.auth.verifyOtp({ email, token: code, type: 'email' });
-      if (res.error) res = await c.auth.verifyOtp({ email, token: code, type: 'signup' });
-      const data = check(res);
-      uid = data.session ? data.session.user.id : null;
-      return data.session;
-    },
-    async resend(email) {
-      const c = await client();
-      check(await c.auth.resend({ type: 'signup', email, options: { emailRedirectTo: APP_URL } }));
+      return { session: data.session };
     },
     async signIn(email, password) {
       const c = await client();
@@ -98,16 +86,6 @@
       await c.auth.signOut();
       uid = null;
       cache.settings = null; cache.dismissed = null;
-    },
-    async requestReset(email) {
-      const c = await client();
-      check(await c.auth.resetPasswordForEmail(email, { redirectTo: APP_URL }));
-    },
-    async verifyReset(email, code) {
-      const c = await client();
-      const data = check(await c.auth.verifyOtp({ email, token: code, type: 'recovery' }));
-      uid = data.session ? data.session.user.id : null;
-      return data.session;
     },
     async setPassword(password) {
       const c = await client();

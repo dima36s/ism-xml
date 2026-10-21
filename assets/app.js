@@ -2962,8 +2962,6 @@
       if (on('[data-edclose]')) { closeEditor(); return; }
       if (on('#edDelete')) { deleteFromEditor(); return; }
       if ((x = on('[data-amode]'))) { const em = $('#authForm [name="email"]'); if (em && em.value) A.email = em.value.trim(); setAuth(x.dataset.amode); return; }
-      if (on('#aResend')) { resendCode('signup'); return; }
-      if (on('#aResendReset')) { resendCode('reset'); return; }
       if (on('#signOut') || on('#signOut2')) { signOut(); return; }
       if (on('#migrateLocal')) { on('#migrateLocal').disabled = true; migrateLocal(); return; }
       if (on('#edLinkAdd')) {
@@ -3236,13 +3234,10 @@
       W.cloud = true;
       let session = null;
       try { session = await cloud.auth.session(); } catch (e) { A.err = e.message; }
-      // Переход по ссылке из письма: убрать токены из адреса
+      // Старая ссылка из письма Supabase: вход уже выполнен, токены убираем из адреса
       if (cloud.urlEvent) history.replaceState(null, '', location.pathname + location.search + '#/');
-      if (cloud.urlEvent === 'error') A.err = cloud.ru(cloud.urlError);
-      if (cloud.urlEvent === 'recovery' && session) { A.email = session.user.email || ''; W.user = session.user; setAuth('new-password'); return; }
       if (!session) { renderAuth(); return; }
       W.user = session.user;
-      if (cloud.urlEvent === 'signup') toast('Почта подтверждена, добро пожаловать', 3500);
     }
     await startApp();
   }
@@ -3265,8 +3260,11 @@
     }
   }
 
-  /* ---------- Вход, регистрация, подтверждение почты ---------- */
-  const A = { mode: 'login', email: '', err: '', msg: '', busy: false, until: 0, timer: null };
+  /* ---------- Регистрация и вход ---------- */
+  // Подтверждения почты нет: регистрация по почте и паролю сразу открывает приложение.
+  // Для этого в проекте Supabase выключено Authentication → Sign In / Providers → Email → Confirm email.
+  const CONFIRM_ON = 'В проекте Supabase включено подтверждение почты, а приложение работает без него. Администратору: Authentication → Sign In / Providers → Email → выключить «Confirm email».';
+  const A = { mode: 'login', email: '', err: '', busy: false };
   const authField = (name, label, type, extra = '') => `<label class="fld"><span>${label}</span><input name="${name}" type="${type}" ${extra}></label>`;
   function renderAuth() {
     document.body.classList.add('auth-mode');
@@ -3278,36 +3276,15 @@
         ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
         ${authField('password', 'Пароль', 'password', 'autocomplete="current-password" required')}
         <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Войти</button>
-        <p class="auth-links"><button type="button" class="link-btn" data-amode="reset">Забыли пароль?</button><span>Нет учётной записи? <button type="button" class="link-btn" data-amode="signup">Зарегистрироваться</button></span></p>`,
+        <p class="auth-links"><span>Нет учётной записи? <button type="button" class="link-btn" data-amode="signup">Зарегистрироваться</button></span></p>
+        <p class="auth-hint">Забыли пароль — напишите администратору приложения.</p>`,
       signup: `<h2>Регистрация</h2>
         ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
         ${authField('password', 'Пароль', 'password', 'autocomplete="new-password" minlength="8" required')}
         ${authField('password2', 'Пароль ещё раз', 'password', 'autocomplete="new-password" minlength="8" required')}
-        <p class="auth-hint">Не короче 8 символов. На почту придёт код подтверждения — его нужно ввести здесь же.</p>
+        <p class="auth-hint">Пароль не короче 8 символов. Почта нужна как логин: писем приложение не отправляет.</p>
         <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Зарегистрироваться</button>
         <p class="auth-links"><span>Уже зарегистрированы? <button type="button" class="link-btn" data-amode="login">Войти</button></span></p>`,
-      verify: `<h2>Подтвердите почту</h2>
-        <p class="auth-lead">Мы отправили письмо на <b>${email}</b>. Введите код из письма или перейдите по ссылке в нём — вход выполнится сам. Письмо может попасть в «Спам».</p>
-        <label class="fld"><span>Код из письма</span><input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" required></label>
-        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Подтвердить</button>
-        <p class="auth-links"><button type="button" class="link-btn" id="aResend">Отправить код ещё раз</button><button type="button" class="link-btn" data-amode="signup">Изменить почту</button></p>`,
-      reset: `<h2>Восстановление пароля</h2>
-        <p class="auth-lead">Пришлём на почту код, после него можно задать новый пароль.</p>
-        ${authField('email', 'Почта', 'email', `autocomplete="email" required value="${email}"`)}
-        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Получить код</button>
-        <p class="auth-links"><button type="button" class="link-btn" data-amode="login">Вернуться ко входу</button></p>`,
-      'new-password': `<h2>Задайте новый пароль</h2>
-        <p class="auth-lead">Вы перешли по ссылке из письма для <b>${email}</b>. Придумайте новый пароль.</p>
-        ${authField('password', 'Новый пароль', 'password', 'autocomplete="new-password" minlength="8" required')}
-        ${authField('password2', 'Новый пароль ещё раз', 'password', 'autocomplete="new-password" minlength="8" required')}
-        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Сохранить пароль и войти</button>`,
-      'reset-code': `<h2>Новый пароль</h2>
-        <p class="auth-lead">Письмо отправлено на <b>${email}</b>. Введите код из письма и новый пароль — или перейдите по ссылке в письме.</p>
-        <label class="fld"><span>Код из письма</span><input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" required></label>
-        ${authField('password', 'Новый пароль', 'password', 'autocomplete="new-password" minlength="8" required')}
-        ${authField('password2', 'Новый пароль ещё раз', 'password', 'autocomplete="new-password" minlength="8" required')}
-        <button type="submit" class="btn btn-primary wide"${A.busy ? ' disabled' : ''}>Сменить пароль и войти</button>
-        <p class="auth-links"><button type="button" class="link-btn" id="aResendReset">Отправить код ещё раз</button><button type="button" class="link-btn" data-amode="login">Вернуться ко входу</button></p>`,
     };
     box.innerHTML = `<div class="auth-wrap">
       <section class="auth-intro">
@@ -3322,110 +3299,42 @@
       </section>
       <section class="auth-card">
         <form id="authForm" data-mode="${A.mode}" novalidate>
-          ${forms[A.mode]}
-          <p class="auth-msg" id="aMsg"${A.msg ? '' : ' hidden'}>${esc(A.msg)}</p>
+          ${forms[A.mode] || forms.login}
           <p class="auth-err" id="aErr" role="alert"${A.err ? '' : ' hidden'}>${esc(A.err)}</p>
         </form>
       </section>
     </div>`;
-    tickResend();
-    const first = box.querySelector(A.mode === 'verify' || A.mode === 'reset-code' ? '[name="code"]' : A.email ? '[name="password"]' : '[name="email"]');
+    const first = box.querySelector(A.email ? '[name="password"]' : '[name="email"]');
     if (first) first.focus();
   }
-  function setAuth(mode, { err = '', msg = '' } = {}) {
-    A.mode = mode; A.err = err; A.msg = msg; A.busy = false;
-    renderAuth();
-    // Ссылку из письма часто открывают в другой вкладке: вход там виден и здесь
-    if ((mode === 'verify' || mode === 'reset-code') && !A.watch) {
-      A.watch = true;
-      window.ISM.cloud.auth.onChange((event, session) => {
-        if (event === 'SIGNED_IN' && session && !W.user && (A.mode === 'verify' || A.mode === 'reset-code')) {
-          W.user = session.user;
-          if (A.mode === 'reset-code') { setAuth('new-password'); return; }
-          startApp();
-        }
-      });
-    }
-  }
-  function tickResend() {
-    clearInterval(A.timer);
-    const btn = $('#aResend') || $('#aResendReset');
-    if (!btn) return;
-    const upd = () => {
-      const left = Math.ceil((A.until - Date.now()) / 1000);
-      btn.disabled = left > 0;
-      btn.textContent = left > 0 ? `Отправить код ещё раз через ${left} с` : 'Отправить код ещё раз';
-      if (left <= 0) clearInterval(A.timer);
-    };
-    upd();
-    A.timer = setInterval(upd, 1000);
-  }
+  function setAuth(mode, { err = '' } = {}) { A.mode = mode; A.err = err; A.busy = false; renderAuth(); }
   async function submitAuth(form) {
     const fd = new FormData(form);
     const v = (k) => String(fd.get(k) || '').trim();
     const auth = window.ISM.cloud.auth;
     const showErr = (m) => { A.busy = false; A.err = m; const e = $('#aErr'); e.textContent = m; e.hidden = false; form.querySelector('[type="submit"]').disabled = false; };
-    const email = v('email') || A.email;
-    if (!['verify', 'reset-code', 'new-password'].includes(A.mode) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('Введите почту в формате name@example.ru.');
-    const pwMode = A.mode === 'signup' || A.mode === 'reset-code' || A.mode === 'new-password';
-    if (pwMode && v('password').length < 8) return showErr('Пароль должен быть не короче 8 символов.');
-    if (pwMode && v('password') !== v('password2')) return showErr('Пароли не совпадают.');
-    if ((A.mode === 'verify' || A.mode === 'reset-code') && !/^\d{6,10}$/.test(v('code').replace(/\s/g, ''))) return showErr('Код — это 6 цифр из письма.');
+    const email = v('email');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('Введите почту в формате name@example.ru.');
+    if (A.mode === 'login' && !v('password')) return showErr('Введите пароль.');
+    if (A.mode === 'signup' && v('password').length < 8) return showErr('Пароль должен быть не короче 8 символов.');
+    if (A.mode === 'signup' && v('password') !== v('password2')) return showErr('Пароли не совпадают.');
     A.busy = true; A.email = email;
     form.querySelector('[type="submit"]').disabled = true;
     $('#aErr').hidden = true;
     try {
-      if (A.mode === 'login') {
-        const session = await auth.signIn(email, v('password'));
-        W.user = session.user;
-        return await startApp();
-      }
       if (A.mode === 'signup') {
         const res = await auth.signUp(email, v('password'));
-        if (!res.needCode) { W.user = res.session.user; return await startApp(); }
-        A.until = Date.now() + 60000;
-        return setAuth('verify');
-      }
-      if (A.mode === 'verify') {
-        const session = await auth.verifySignup(email, v('code').replace(/\s/g, ''));
-        W.user = session.user;
-        toast('Почта подтверждена, добро пожаловать');
+        if (!res.session) return showErr(`Учётная запись создана, но войти пока нельзя. ${CONFIRM_ON}`);
+        W.user = res.session.user;
+        toast('Учётная запись создана, добро пожаловать', 3500);
         return await startApp();
       }
-      if (A.mode === 'reset') {
-        await auth.requestReset(email);
-        A.until = Date.now() + 60000;
-        return setAuth('reset-code');
-      }
-      if (A.mode === 'new-password') {
-        await auth.setPassword(v('password'));
-        toast('Пароль изменён');
-        return await startApp();
-      }
-      if (A.mode === 'reset-code') {
-        const session = await auth.verifyReset(email, v('code').replace(/\s/g, ''));
-        await auth.setPassword(v('password'));
-        W.user = session.user;
-        toast('Пароль изменён');
-        return await startApp();
-      }
+      const session = await auth.signIn(email, v('password'));
+      W.user = session.user;
+      return await startApp();
     } catch (err) {
-      if (A.mode === 'login' && /не подтверждена/.test(err.message)) {
-        A.until = 0;
-        return setAuth('verify', { err: err.message });
-      }
-      return showErr(err.message);
+      return showErr(/не подтверждена/.test(err.message) ? CONFIRM_ON : err.message);
     }
-    return undefined;
-  }
-  async function resendCode(kind) {
-    const auth = window.ISM.cloud.auth;
-    try {
-      if (kind === 'reset') await auth.requestReset(A.email); else await auth.resend(A.email);
-      A.until = Date.now() + 60000;
-      A.err = ''; A.msg = `Новый код отправлен на ${A.email}.`;
-      renderAuth();
-    } catch (err) { A.err = err.message; A.msg = ''; renderAuth(); }
   }
   async function signOut() {
     try { await window.ISM.cloud.auth.signOut(); } catch { /* сеанс уже закрыт */ }
@@ -3462,7 +3371,7 @@
     h += `<div class="acc-grid">
       <section class="acc-card"><h2>Учётная запись</h2>
         <dl class="acc-dl">
-          <dt>Почта</dt><dd>${esc(u.email || '')} ${u.email_confirmed_at || u.confirmed_at ? '<span class="chip shall">подтверждена</span>' : '<span class="chip shall-not">не подтверждена</span>'}</dd>
+          <dt>Почта</dt><dd>${esc(u.email || '')}</dd>
           <dt>Зарегистрирован</dt><dd>${esc(dt(u.created_at))}</dd>
           <dt>Последний вход</dt><dd>${esc(dt(u.last_sign_in_at))}</dd>
         </dl>

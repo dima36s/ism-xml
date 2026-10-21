@@ -744,7 +744,6 @@ body.auth-mode .topbar, body.auth-mode .layout, body.auth-mode .banner, body.aut
 .auth-card .btn.wide { width: 100%; justify-content: center; height: 44px; font-size: 16px; }
 .auth-lead, .auth-hint { margin: 0; font-size: 14.5px; color: var(--ink-2); }
 .auth-hint { font-size: 13px; color: var(--ink-3); }
-.code-input { font: 600 26px var(--mono) !important; letter-spacing: .3em; text-align: center; height: 56px !important; }
 .auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin: 0; font-size: 14px; color: var(--ink-2); }
 .auth-links .link-btn[disabled] { color: var(--ink-3); cursor: default; text-decoration: none; }
 .auth-msg { margin: 0; padding: 8px 10px; background: var(--ok-wash); color: var(--ok); font-size: 14px; }
