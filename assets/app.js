@@ -142,10 +142,13 @@
     cloud: false,          // вход и база данных Supabase включены (assets/config.js)
     user: null,            // текущий пользователь Supabase Auth
     builtinUrl: '',
+    reg: { rows: null, at: 0, count: null, loading: null, err: '', stale: false }, // общий реестр из базы данных
+    regJobs: new Map(),    // очередь обновлений общего реестра по документам
   };
   const freshF = () => ({ q: '', modality: 'all', basis: 'all', check: 'all', role: '', object: '', kind: '', section: '', crit: 'all', owner: '', cat: 'all' });
   const freshRF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all', cat: 'all' });
   const freshCF = () => ({ crit: 'all', owner: '', done: 'all', q: '', ov: 'all', doc: '', cat: 'all', level: '' });
+  const freshGF = () => ({ q: '', src: '', cat: 'all', done: 'all', mine: 'all', limit: 300 });
   // Текущий документ и состояние интерфейса
   const S = {
     key: '',
@@ -157,6 +160,7 @@
     f: freshF(),
     rf: freshRF(),
     cf: freshCF(),
+    gf: freshGF(),
     of: { min: 0.55, kind: 'all', where: 'all', hidden: false, req: '', doc: '', limit: 60 },
     openReg: new Set(),
     linkRel: '',
@@ -382,7 +386,8 @@
     const rec = e.builtin
       ? { key: e.key, builtin: true, included: e.included, overridden: !!e.overridden, xml: e.overridden ? e.xml : null, addedAt: 0 }
       : { key: e.key, name: e.name, kind: e.kind, xml: e.xml, addedAt: e.addedAt, included: e.included, report: e.report, level: e.level };
-    try { await store().putDoc(rec, syncPayload(e)); } catch (err) { toast(`Не удалось сохранить ${store().mode === 'cloud' ? 'в базе' : 'в браузере'}: ${err.message}`, 6000); }
+    try { await store().putDoc(rec, syncPayload(e)); } catch (err) { toast(`Не удалось сохранить ${store().mode === 'cloud' ? 'в базе' : 'в браузере'}: ${err.message}`, 6000); return; }
+    if (W.cloud) queueRegistry(e);
   }
   // Строки для базы данных: документ и его требования (таблицы documents и requirements)
   function syncPayload(e) {
@@ -408,27 +413,158 @@
   }
   const saveMeta = (k, v) => { if (W.storage) store().setMeta(k, v).catch(() => {}); };
 
+  /* ---------- Общий реестр в базе данных: один на всех пользователей ---------- */
+  // Строки общего реестра для документа: столбцы A–T мастер-реестра и поля для поиска повторов
+  function registryPayload(m) {
+    return {
+      doc: { code: m.id || '', title: docTitle(m) || '', version: m.version || '', type: m.typeCode || '' },
+      rows: m.reqs.map((r) => {
+        const row = registryRow(r).map((v) => (v == null ? '' : String(v)));
+        return { req_id: r.id, card_id: row[0], statement: r.statement, modality: r.modality || '', category: r.category || '', complete: row[17] === 'Готово', cols: row };
+      }),
+    };
+  }
+  // Обновления реестра по одному документу идут строго по очереди: правка не обгонит удаление
+  function queueReg(e, fn) {
+    const job = (W.regJobs.get(e.key) || Promise.resolve()).catch(() => null).then(fn);
+    W.regJobs.set(e.key, job);
+    return job;
+  }
+  const queueRegistry = (e) => queueReg(e, () => registrySync(e));
+  async function loadRegistry(force) {
+    if (!W.cloud) return [];
+    if (!force && W.reg.rows && Date.now() - W.reg.at < 60000) return W.reg.rows;
+    if (W.reg.loading) return W.reg.loading;
+    W.reg.loading = window.ISM.cloud.registry.all()
+      .then((rows) => { Object.assign(W.reg, { rows, at: Date.now(), count: rows.length, err: '', stale: false }); return rows; })
+      .catch((err) => { W.reg.err = err.message; throw err; })
+      .finally(() => { W.reg.loading = null; });
+    return W.reg.loading;
+  }
+  async function refreshRegCount() {
+    try { W.reg.count = await window.ISM.cloud.registry.count(); refreshCounts(); } catch { /* счётчик необязателен */ }
+  }
+  // Почти одинаковые формулировки из других документов реестра: те же слова с точностью до окончаний, те же числа и модальность
+  const numsOf = (t) => (String(t).match(/\d+(?:[.,]\d+)?/g) || []).join(' ');
+  function nearDuplicates(m, src, rows) {
+    const out = new Map();
+    const others = rows.filter((x) => x.source_key !== src);
+    if (!others.length || !m.reqs.length) return out;
+    const pol = (mod) => (mod === 'shall-not' ? 'neg' : 'pos');
+    const items = [
+      ...m.reqs.map((r) => ({ key: `d|${r.id}`, text: r.statement, polarity: pol(r.modality), side: 'd', nums: numsOf(r.statement), id: r.id })),
+      ...others.map((x) => ({ key: `g|${x.id}`, text: x.statement, polarity: pol(x.modality), side: 'g', nums: numsOf(x.statement), x })),
+    ];
+    const by = new Map(items.map((i) => [i.key, i]));
+    const pairs = window.ISM.overlap.findPairs(items, { minScore: 0.95, dupScore: 0.95, skip: (a, b) => a.side === b.side || a.nums !== b.nums });
+    pairs.forEach((p) => {
+      if (p.kind !== 'dup') return;
+      const a = by.get(p.a), b = by.get(p.b);
+      const d = a.side === 'd' ? a : b;
+      const g = a.side === 'd' ? b : a;
+      if (!out.has(d.id)) out.set(d.id, g.x);
+    });
+    return out;
+  }
+  async function registrySync(e) {
+    if (!W.cloud || !W.docs.includes(e) || !e.included) return null;
+    const m = modelOf(e);
+    if (!m) return null;
+    // Вторая копия того же документа в работе: в реестре остаются требования первой копии
+    const first = W.docs.find((d) => d.included && modelOf(d) && modelOf(d).id === m.id);
+    if (first && first !== e) { e.regSync = { copy: true }; return e.regSync; }
+    const api = window.ISM.cloud.registry;
+    try {
+      const p = registryPayload(m);
+      let similar = new Map();
+      try { similar = nearDuplicates(m, api.sourceOf(p.doc.code), await loadRegistry()); } catch { /* без проверки похожих: точные повторы база не пропустит сама */ }
+      const res = await api.sync(p.doc, p.rows.filter((x) => !similar.has(x.req_id)));
+      res.similar = similar.size;
+      e.regSync = res;
+      if (res.added || res.updated || res.removed || res.duplicates) { W.reg.stale = true; refreshRegCount(); }
+      return res;
+    } catch (err) {
+      toast('Общий реестр не обновился: ' + err.message, 6000);
+      return null;
+    }
+  }
+  // Документ убрали из работы или из общего реестра: его записи в реестре тоже убираются (только добавленные вами)
+  function registryRemove(e) {
+    if (!W.cloud) return Promise.resolve(0);
+    const m = modelOf(e);
+    if (!m) return Promise.resolve(0);
+    e.regSync = null;
+    return queueReg(e, async () => {
+      // тот же документ ещё в работе и в реестре — его записи остаются
+      const twin = W.docs.find((d) => d !== e && d.included && modelOf(d) && modelOf(d).id === m.id);
+      if (twin) return queueRegistry(twin);
+      try {
+        const n = await window.ISM.cloud.registry.remove(m.id || '');
+        if (n) { W.reg.stale = true; refreshRegCount(); }
+        return n;
+      } catch (err) { toast('Общий реестр не обновился: ' + err.message, 6000); return 0; }
+    });
+  }
+  // При входе: документы, включённые в реестр, сверяются с ним (например, загруженные до появления общего реестра)
+  async function reconcileRegistry() {
+    for (const e of W.docs.filter((d) => d.included)) await queueRegistry(e);
+    if (parseHash().view === 'home') rerender();
+  }
+  // Итог добавления документа в общий реестр — одной фразой
+  function regMsg(res, e) {
+    if (!e.included) return 'В общий реестр не добавлен: переключатель «в общем реестре» выключен.';
+    if (!res) return '';
+    if (res.copy) return 'Такой документ у вас уже есть: в общем реестре остаются требования первой копии.';
+    if (res.existing) return `Документ уже есть в общем реестре (${res.owner === 'published' ? 'опубликованный регламент' : 'добавлен другим пользователем'}), его требования не добавлялись.`;
+    const same = (res.duplicates || 0) + (res.similar || 0);
+    const parts = [];
+    if (res.added) parts.push(`добавлено ${pl(res.added, 'требование', 'требования', 'требований')}`);
+    if (res.updated) parts.push(`обновлено ${res.updated}`);
+    if (same) parts.push(`${same} уже ${same % 10 === 1 && same % 100 !== 11 ? 'было' : 'были'} в реестре`);
+    return parts.length ? `Общий реестр: ${parts.join(', ')}.` : '';
+  }
+  function regLine(e) {
+    const res = e.included && e.regSync;
+    if (res && res.copy) return '<p class="dc-reg muted">Копия документа: в общем реестре — требования первой копии.</p>';
+    if (!res || !res.existing) return '';
+    return `<p class="dc-reg muted">В общем реестре этот документ — ${res.owner === 'published' ? 'опубликованный регламент' : 'от другого пользователя'}: ${pl(res.existing, 'запись', 'записи', 'записей')}. Ваши правки в реестр не попадают.</p>`;
+  }
+  // Опубликованный регламент как пример: по желанию пользователя
+  async function addExample() {
+    if (entry(BUILTIN)) { openDoc(BUILTIN, '#/doc'); return; }
+    let text = '';
+    try { text = await fetchText(W.builtinUrl); } catch (err) { toast('Пример не загрузился: ' + err.message, 5000); return; }
+    const b = { key: BUILTIN, builtin: true, kind: 'builtin', name: DEFAULT_XML.split('/').pop(), addedAt: Date.now(), included: true, overridden: false, xml: text };
+    W.models.delete(BUILTIN);
+    W.docs.push(b);
+    await persist(b);
+    bump();
+    openDoc(BUILTIN, '#/doc');
+  }
+
   async function initWorkspace() {
     W.storage = await store().available();
     let saved = [];
     try { saved = await store().allDocs(); } catch (err) { saved = []; W.loadError = err.message; }
     W.builtinUrl = new URL(DEFAULT_XML, location.href).href;
-    let text = '';
-    try { text = await fetchText(W.builtinUrl); } catch (e) { W.builtinError = e.message; }
-    const rec = saved.find((d) => d.key === BUILTIN) || { key: BUILTIN, included: true };
-    const b = { key: BUILTIN, builtin: true, kind: 'builtin', name: DEFAULT_XML.split('/').pop(), addedAt: 0, included: rec.included !== false, overridden: !!(rec.overridden && rec.xml), xml: rec.overridden && rec.xml ? rec.xml : text };
+    // С личным кабинетом рабочее пространство начинается пустым: опубликованный регламент появляется,
+    // только если пользователь сам открыл его как пример. Без кабинета он открывается сразу.
+    const rec = saved.find((d) => d.key === BUILTIN) || (W.cloud ? null : { key: BUILTIN, included: true });
     W.docs = [];
-    if (b.xml) W.docs.push(b);
+    if (rec) {
+      let text = '';
+      if (!(rec.overridden && rec.xml)) { try { text = await fetchText(W.builtinUrl); } catch (e) { W.builtinError = e.message; } }
+      const b = { key: BUILTIN, builtin: true, kind: 'builtin', name: DEFAULT_XML.split('/').pop(), addedAt: rec.addedAt || 0, included: rec.included !== false, overridden: !!(rec.overridden && rec.xml), xml: rec.overridden && rec.xml ? rec.xml : text };
+      if (b.xml) W.docs.push(b);
+    }
     saved.filter((d) => d.key !== BUILTIN && d.xml).sort((a, z) => a.addedAt - z.addedAt).forEach((d) => W.docs.push({ ...d, included: d.included !== false }));
     try {
       W.dismissed = new Set(await store().getMeta('dismissed', []));
       W.links = await store().allLinks();
       W.tempSeq = await store().getMeta('tempSeq', {});
-      S.key = await store().getMeta('current', BUILTIN);
-    } catch { S.key = BUILTIN; }
+      S.key = await store().getMeta('current', W.cloud ? '' : BUILTIN);
+    } catch { S.key = W.cloud ? '' : BUILTIN; }
     if (!entry(S.key)) S.key = W.docs[0] ? W.docs[0].key : '';
-    // В базе у каждого пользователя есть строка опубликованного регламента: на неё ссылаются связи и реестр
-    if (W.cloud && !W.loadError && !saved.some((d) => d.key === BUILTIN) && entry(BUILTIN)) await persist(entry(BUILTIN));
     W.ready = true;
   }
 
@@ -928,6 +1064,8 @@
   }
   const filteredRegistry = () => filterRegistry(M().reqs, S.rf);
   const commonList = () => includedModels().flatMap((m) => m.reqs);
+  // Сколько записей в общем реестре: в базе данных — общий для всех, без кабинета — по документам этого браузера
+  const commonCount = () => (W.cloud ? (W.reg.count == null ? '' : W.reg.count) : commonList().length);
   const filteredCommon = () => filterRegistry(commonList(), S.cf, { ownerByName: true });
 
   function regSummary(list, { docs = 0 } = {}) {
@@ -1021,6 +1159,7 @@
 
   /* ---------- Общий реестр всех документов ---------- */
   function viewCommon() {
+    if (W.cloud) return viewShared();
     const inc = includedModels();
     const all = commonList();
     const f = S.cf;
@@ -1067,11 +1206,135 @@
     box.innerHTML = h;
   }
 
+  /* ---------- Общий реестр из базы данных ---------- */
+  const WHO = { published: 'опубликованный регламент', me: 'вы', other: 'другой пользователь' };
+  const sharedCols = (x) => {
+    const c = Array.isArray(x.cols) ? x.cols.slice(0, REG_HEAD.length).map((v) => (v == null ? '' : String(v))) : [];
+    while (c.length < REG_HEAD.length) c.push('');
+    if (!c[0]) c[0] = x.card_id || x.req_id;
+    if (!c[3]) c[3] = x.statement;
+    return c;
+  };
+  function sharedSources(rows) {
+    const me = W.user && W.user.id;
+    const map = new Map();
+    rows.forEach((x) => {
+      let s = map.get(x.source_key);
+      if (!s) { s = { key: x.source_key, code: x.doc_code, title: x.doc_title || '', version: x.doc_version, n: 0, owners: new Set(), at: '' }; map.set(x.source_key, s); }
+      s.n++;
+      s.owners.add(x.added_by || '');
+      if ((x.updated_at || '') > s.at) s.at = x.updated_at || '';
+    });
+    return [...map.values()].map((s) => ({ ...s, who: s.owners.has('') ? 'published' : s.owners.has(me) ? 'me' : 'other' }));
+  }
+  function filteredShared() {
+    const f = S.gf;
+    const me = W.user && W.user.id;
+    const words = norm(f.q).toLowerCase().split(' ').filter(Boolean);
+    return (W.reg.rows || []).filter((x) => {
+      if (f.src && x.source_key !== f.src) return false;
+      if (f.cat !== 'all' && x.category !== f.cat) return false;
+      if (f.done !== 'all' && (f.done === 'ok') !== !!x.complete) return false;
+      if (f.mine === 'me' && x.added_by !== me) return false;
+      if (words.length) { const hay = `${sharedCols(x).join(' ')} ${x.doc_code} ${x.req_id}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) return false; }
+      return true;
+    });
+  }
+  function reloadShared() {
+    W.reg.err = '';
+    loadRegistry(true).catch(() => null).then(() => { if (parseHash().view === 'common') rerender(); else refreshCounts(); });
+  }
+  function viewShared() {
+    const st = W.reg;
+    const rows = st.rows;
+    let h = `<div class="page-head"><div><h1>Общий реестр требований</h1><p>Один реестр для всех пользователей приложения, хранится в базе данных. Требования ваших документов с переключателем «в общем реестре» попадают сюда автоматически. Требование, которое в реестре уже есть, второй раз не добавляется: тот же документ и номер требования или та же формулировка.</p></div>
+      <div class="head-actions"><button type="button" class="btn" id="regReload">Обновить</button><button type="button" class="btn btn-primary" data-dl="gxlsx"${rows && rows.length ? '' : ' disabled'}>${ICON.down}<span>Выгрузить в Excel</span></button></div></div>`;
+    if ((!rows || st.stale) && !st.loading && !st.err) reloadShared();
+    if (!rows) return h + (st.err ? `<div class="empty">Реестр не загрузился: ${esc(st.err)} <button type="button" class="link-btn" id="regReload2">Повторить</button></div>` : '<div class="empty">Загружаю реестр из базы данных…</div>');
+    if (!rows.length) return h + '<div class="empty">В общем реестре пока нет требований. <a href="#/">Загрузите документы</a> — их требования попадут сюда автоматически.</div>';
+    const me = W.user && W.user.id;
+    const srcs = sharedSources(rows);
+    const nb = rows.filter((x) => x.category === 'business').length;
+    const done = rows.filter((x) => x.complete).length;
+    h += `<section class="reg-summary">
+      <div class="reg-fact"><span class="lbl">Документов</span><b>${srcs.length}</b></div>
+      <div class="reg-fact"><span class="lbl">Требований</span><b>${rows.length}</b></div>
+      <div class="reg-fact"><span class="lbl">Комплектных</span><b class="${done === rows.length ? 'ok' : 'bad'}">${done}</b></div>
+      <div class="reg-fact cat"><span class="lbl">Бизнес / системные</span><b><span class="cb">${nb}</span> / <span class="cs">${rows.length - nb}</span></b></div>
+      <div class="reg-fact"><span class="lbl">Добавлено вами</span><b>${rows.filter((x) => x.added_by === me).length}</b></div>
+    </section>`;
+    h += `<div class="sd-table" role="list" aria-label="Документы в общем реестре">
+      <div class="sd-row sd-head" aria-hidden="true"><span>Документ</span><span>Требований</span><span>Добавил</span><span>Обновлено</span></div>
+      ${srcs.map((s) => `<button type="button" role="listitem" class="sd-row${S.gf.src === s.key ? ' on' : ''}" data-gsrc="${esc(s.key)}" aria-pressed="${S.gf.src === s.key}" title="Показать требования документа"><span class="sd-doc"><b>${esc(s.code || 'без обозначения')}</b> ${esc(s.title)}${s.version ? ` <span class="muted">· версия ${esc(s.version)}</span>` : ''}</span><span class="sd-n">${s.n}</span><span class="sd-who">${esc(WHO[s.who])}</span><span class="muted sd-at">${s.at ? esc(fmtDate(s.at).split(' ')[0]) : ''}</span></button>`).join('')}
+    </div>`;
+    const f = S.gf;
+    const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-gfl="${key}" data-v="${v}" aria-pressed="${f[key] === v}">${t}</button>`).join('')}</div>`;
+    h += `<div class="filters">
+      <div class="f-row"><input type="search" id="gq" placeholder="ID карточки, наименование, слова формулировки, документ" value="${esc(f.q)}" aria-label="Поиск по общему реестру"></div>
+      <div class="f-row">
+        <label class="f-group"><span class="f-label">Документ</span><select id="gsrc"><option value="">все (${srcs.length})</option>${srcs.map((s) => `<option value="${esc(s.key)}"${f.src === s.key ? ' selected' : ''}>${esc(s.code || 'без обозначения')} — ${esc(s.title.slice(0, 60))} (${s.n})</option>`).join('')}</select></label>
+        <div class="f-group"><span class="f-label">Тип</span>${seg('cat', [['all', 'все'], ['business', 'бизнес'], ['system', 'системные']])}</div>
+        <div class="f-group"><span class="f-label">Комплектность</span>${seg('done', [['all', 'все'], ['ok', 'готово'], ['todo', 'заполнить']])}</div>
+        <div class="f-group"><span class="f-label">Добавил</span>${seg('mine', [['all', 'все'], ['me', 'вы']])}</div>
+      </div></div>`;
+    return h + '<div id="sharedResults"></div>';
+  }
+  // Требование в документе пользователя, из которого пришла запись реестра
+  function localReqFor(x) {
+    for (const e of W.docs) {
+      const m = modelOf(e);
+      const r = m && m.id === x.doc_code && m.byId.get(x.req_id);
+      if (r && r.kind === 'requirement') return r;
+    }
+    return null;
+  }
+  function sharedRowHtml(x) {
+    const row = sharedCols(x);
+    const id = `g${x.id}`;
+    const open = S.openReg.has(id);
+    const local = localReqFor(x);
+    const miss = REG_REQUIRED.filter((i) => !row[i].trim()).map((i) => REG_HEAD[i]);
+    const cat = x.category ? `<span class="chip cat ${esc(x.category)}" title="${esc(CAT[x.category])}">${esc(CAT_SHORT[x.category])}</span>` : '';
+    return `<div class="reg-row${open ? ' open' : ''}" id="reg-${esc(id)}">
+        <div class="rid"><span class="req-id">${esc(row[0])}</span><span class="doc-tag">${esc(x.doc_code || 'без обозначения')}</span>${row[5] ? `<span class="muted">${esc(row[5].split(';')[0])}</span>` : ''}</div>
+        <div><div class="req-title">${esc(row[1] || 'без наименования')} ${cat}</div><div class="line">${esc(row[3])}</div>
+          <div class="row-acts"><button type="button" class="link-btn" data-reg="${esc(id)}" aria-expanded="${open}">${open ? 'Скрыть карточку' : 'Вся карточка'}</button>${local ? `<a class="link-btn" href="${esc(docHref(local))}">В документе</a>` : ''}</div></div>
+        <div class="owner">${row[7] ? esc(row[7]) : '<span class="bad-ref">не назначен</span>'}</div>
+        <div>${row[9] ? `<span class="chip crit ${esc(row[9].toLowerCase())}" title="${esc(L.criticality[row[9]] || '')}">${esc(row[9])}</span>` : '<span class="bad-ref">—</span>'}</div>
+        <div>${x.complete ? '<span class="chip shall">Готово</span>' : `<span class="chip shall-not" title="Не заполнено: ${esc(miss.join(', '))}">Заполнить</span>`}</div>
+        ${open ? `<dl class="reg-card">${REG_HEAD.map((t, i) => `<dt><span class="col">${String.fromCharCode(65 + i)}</span>${esc(t)}</dt><dd>${row[i] ? esc(row[i]) : `<span class="muted">${REG_REQUIRED.includes(i) ? 'не заполнено' : '—'}</span>`}</dd>`).join('')}</dl>` : ''}
+      </div>`;
+  }
+  function renderSharedResults() {
+    const box = $('#sharedResults');
+    if (!box || !W.reg.rows) return;
+    const list = filteredShared();
+    const total = W.reg.rows.length;
+    const filtered = list.length !== total;
+    let h = `<div class="result-line"><span>${filtered ? `Найдено ${list.length} из ${total}` : `Всего ${total}`}${filtered ? ' <button type="button" class="link-btn" id="resetGF">Сбросить фильтры</button>' : ''}</span>
+      <span class="rl-actions"><button type="button" class="btn btn-sm" data-dl="gxlsx-f"${list.length ? '' : ' disabled'}>${ICON.down}${filtered ? 'Найденные в Excel' : 'Excel'}</button></span></div>`;
+    if (!list.length) { box.innerHTML = h + '<div class="empty">По этим условиям записей нет.</div>'; return; }
+    const shown = list.slice(0, S.gf.limit || 300);
+    h += `<div class="reg-table"><div class="reg-head" aria-hidden="true"><span>ID карточки</span><span>Наименование и формулировка</span><span>Владелец</span><span>Класс</span><span>Комплектность</span></div>${shown.map(sharedRowHtml).join('')}</div>`;
+    if (shown.length < list.length) h += `<div class="more-line"><button type="button" class="btn btn-sm" id="moreShared">Показать ещё ${Math.min(300, list.length - shown.length)} из ${list.length - shown.length}</button></div>`;
+    box.innerHTML = h;
+  }
+  async function exportShared(onlyFound) {
+    toast('Загружаю реестр из базы данных…', 6000);
+    try { await loadRegistry(true); } catch (err) { toast('Реестр не загрузился: ' + err.message, 5000); return; }
+    const all = W.reg.rows;
+    const list = onlyFound ? filteredShared() : all;
+    if (!list.length) { toast('В общем реестре нет записей', 3000); return; }
+    const n = new Set(list.map((x) => x.source_key)).size;
+    await exportXlsx(list.map(sharedCols), `Общий реестр требований${list.length !== all.length ? ' (выборка)' : ''} ${todayRu()}.xlsx`, `общий реестр из базы данных, ${pl(n, 'документ', 'документа', 'документов')}`);
+    if (parseHash().view === 'common') rerender(); else refreshCounts();
+  }
+
   /* ---------- Выгрузка реестра в Excel ---------- */
   async function exportXlsx(list, fileName, origin) {
     toast('Готовлю файл Excel…', 6000);
     if (!window.ExcelJS) await loadScript(EXCELJS_URL);
-    const rows = list.map(registryRow);
+    const rows = list.map((x) => (Array.isArray(x) ? x : registryRow(x))); // готовые строки A–T или требования
     const wb = new window.ExcelJS.Workbook();
     wb.creator = 'ИСМ XML';
     wb.created = new Date();
@@ -1252,7 +1515,7 @@
   function viewOverlaps() {
     const f = S.of;
     const inc = includedModels();
-    let h = `<div class="page-head"><div><h1>Пересекающиеся требования</h1><p>Похожие формулировки среди требований общего реестра. Слова сравниваются без учёта окончаний, редкие слова весят больше частых. Общие слова подсвечены. Требования одного пункта (перечень после «должен включать:») между собой не сравниваются.</p></div></div>`;
+    let h = `<div class="page-head"><div><h1>Пересекающиеся требования</h1><p>Похожие формулировки среди требований ${W.cloud ? 'ваших документов, включённых в общий реестр' : 'общего реестра'}. Слова сравниваются без учёта окончаний, редкие слова весят больше частых. Общие слова подсвечены. Требования одного пункта (перечень после «должен включать:») между собой не сравниваются.</p></div></div>`;
     if (!inc.length) return h + '<div class="empty">В общем реестре нет документов. <a href="#/">Загрузите документы</a>.</div>';
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-of="${key}" data-v="${v}" aria-pressed="${String(f[key]) === v}">${t}</button>`).join('')}</div>`;
     h += `<div class="filters ov-filters">
@@ -1800,9 +2063,9 @@
   /* ---------- Главная: загрузка и список документов ---------- */
   function viewHome() {
     const docs = W.docs;
-    const nReq = commonList().length;
+    const nReq = commonCount();
     const nOv = docs.length ? overlapPairs().length : 0;
-    let h = `<div class="page-head"><div><h1>Документы</h1><p>Загрузите регламенты, методики или реестры — приложение разметит пункты, найдёт требования по словам «должен», «не допускается», «рекомендуется» и заведёт на каждое карточку реестра. Файлы обрабатываются в этом браузере и никуда не отправляются.</p></div></div>`;
+    let h = `<div class="page-head"><div><h1>Документы</h1><p>Загрузите регламенты, методики или реестры — приложение разметит пункты, найдёт требования по словам «должен», «не допускается», «рекомендуется» и заведёт на каждое карточку реестра. ${W.cloud ? 'Файлы разбираются в браузере, результат сохраняется в базе данных под вашей учётной записью.' : 'Файлы обрабатываются в этом браузере и никуда не отправляются.'}</p></div></div>`;
     h += `<section class="upload">
       <label class="drop big" id="upDrop">
         <span class="drop-ico">${ICON.up}</span>
@@ -1823,13 +2086,17 @@
 
     h += `<section class="block docs-block"><div class="block-head"><h2>В работе ${docs.length ? `<span class="count">${docs.length}</span>` : ''}</h2>
       ${docs.length ? `<div class="head-actions"><a class="btn btn-sm" href="#/common">${ICON.reg}Общий реестр · ${nReq}</a><a class="btn btn-sm" href="#/overlaps">${ICON.ov}Пересечения · ${nOv}</a><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Всё одним архивом</button></div>` : ''}</div>`;
-    if (!docs.length) h += `<div class="empty">Документов пока нет.${W.builtinError ? ' Опубликованный регламент не загрузился: откройте приложение по ссылке GitHub Pages, а не двойным щелчком по файлу.' : ''}</div>`;
+    if (!docs.length) {
+      h += W.cloud
+        ? `<div class="empty">Документов пока нет — загрузите файлы выше. Общий реестр требований всех пользователей — <a href="#/common">на вкладке «Общий реестр»</a>${W.reg.count ? ` (${pl(W.reg.count, 'запись', 'записи', 'записей')})` : ''}. Посмотреть, как выглядит размеченный документ, можно на примере: <button type="button" class="link-btn" id="addExample">открыть регламент C2.4.1.MTH.01</button>.</div>`
+        : `<div class="empty">Документов пока нет.${W.builtinError ? ' Опубликованный регламент не загрузился: откройте приложение по ссылке GitHub Pages, а не двойным щелчком по файлу.' : ''}</div>`;
+    }
     else {
       const lv = (e) => { const m = modelOf(e); if (!m || !m.type) return 'none'; return m.type.level ?? 'ext'; };
       const groups = [1, 2, 3, 4, 'ext', 'none'].map((l) => [l, docs.filter((e) => lv(e) === l)]).filter(([, list]) => list.length);
       h += groups.map(([l, list]) => `<div class="lvl-group"><h3 class="lvl-head">${l === 'ext' ? '<span class="lvl-n ext">ВН</span><span>Внешняя документация</span>' : l === 'none' ? '<span class="lvl-n none">?</span><span>Вид документа не определён <span class="muted">— выберите его в карточке документа</span></span>' : `<span class="lvl-n">${l}</span><span>${l} уровень <span class="muted">— ${esc(levelInfo(l).purpose)}</span></span>`}<span class="count">${list.length}</span></h3><div class="doc-cards">${list.map(docCard).join('')}</div></div>`).join('');
     }
-    h += `<p class="ws-foot muted">${W.cloud ? `Документы и правки хранятся в базе данных и доступны вам с любого устройства после входа. Другие пользователи их не видят; чтобы передать документ коллеге, скачайте XML или реестр.` : W.storage ? 'Загруженные документы и правки хранятся только в этом браузере. Чтобы передать их коллеге, скачайте XML документа или общий реестр и отправьте файлом — коллега загрузит его у себя.' : '<b>Браузер не разрешает сохранять данные</b> (например, в приватном окне): загруженные документы пропадут после закрытия вкладки.'}${docs.some((d) => !d.builtin) ? ' <button type="button" class="link-btn" id="wsClear">Удалить все загруженные документы</button>' : ''}</p>`;
+    h += `<p class="ws-foot muted">${W.cloud ? `Документы и правки хранятся в базе данных и доступны вам с любого устройства после входа. Другие пользователи ваших документов не видят, но требования документов с переключателем «в общем реестре» видны всем на вкладке «Общий реестр».` : W.storage ? 'Загруженные документы и правки хранятся только в этом браузере. Чтобы передать их коллеге, скачайте XML документа или общий реестр и отправьте файлом — коллега загрузит его у себя.' : '<b>Браузер не разрешает сохранять данные</b> (например, в приватном окне): загруженные документы пропадут после закрытия вкладки.'}${docs.some((d) => !d.builtin || W.cloud) ? ' <button type="button" class="link-btn" id="wsClear">Удалить все загруженные документы</button>' : ''}</p>`;
     h += '</section>';
 
     h += `<section class="block how"><h2>Как это работает</h2><ol class="steps">
@@ -1866,13 +2133,14 @@
       <h3><a href="#/open/${esc(e.key)}">${esc(docTitle(m))}</a></h3>
       <p class="dc-facts">${facts.join(' · ')}${nOv ? ` · <a href="#/overlaps?doc=${esc(e.key)}">пересечения: ${nOv}</a>` : ''}</p>
       ${warn.length ? `<p class="dc-warn" title="${esc(warn.join('\n'))}">${esc(warn[0])}${warn.length > 1 ? ` <span class="muted">и ещё ${warn.length - 1}</span>` : ''}</p>` : ''}
-      <p class="dc-src muted">${e.builtin ? 'Опубликован в репозитории, общий для всех по ссылке' : `Из файла «${esc(e.name)}», ${esc(fmtDate(e.addedAt))}`}</p>
+      <p class="dc-src muted">${e.builtin ? (W.cloud ? 'Пример: опубликованный регламент из репозитория приложения' : 'Опубликован в репозитории, общий для всех по ссылке') : `Из файла «${esc(e.name)}», ${esc(fmtDate(e.addedAt))}`}</p>
+      ${regLine(e)}
       <div class="dc-actions">
         <label class="switch"><input type="checkbox" data-include="${esc(e.key)}"${e.included ? ' checked' : ''}><span class="sw" aria-hidden="true"></span>в общем реестре</label>
         <span class="sp"></span>
         <a class="btn btn-sm btn-primary" href="#/open/${esc(e.key)}">Открыть</a>
         <button type="button" class="btn btn-sm" data-docxml="${esc(e.key)}" title="Скачать XML документа">${ICON.down}XML</button>
-        ${e.builtin ? (e.overridden ? `<button type="button" class="btn btn-sm" data-docreset="${esc(e.key)}">Сбросить правки</button>` : '') : delBtn(e)}
+        ${e.builtin && e.overridden ? `<button type="button" class="btn btn-sm" data-docreset="${esc(e.key)}">Сбросить правки</button>` : ''}${!e.builtin || W.cloud ? delBtn(e) : ''}
       </div>
     </article>`;
   }
@@ -1941,8 +2209,10 @@
         if (same.length) e.report.warnings = [...(e.report.warnings || []), `Документ ${m.id} версии ${m.version} уже есть в списке — его требования будут отмечены как почти совпадающие. Лишнюю копию исключите из общего реестра.`];
         W.docs.push(e);
         await persist(e);
+        const rs = W.cloud ? regMsg(e.included ? await W.regJobs.get(key) : null, e) : '';
         it.state = 'ok'; it.key = key;
-        it.msg = `${L.srcLong[res.kind]}: ${res.kind === 'xlsx' ? pl(m.reqs.length, 'карточка', 'карточки', 'карточек') : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.`;
+        it.msg = `${L.srcLong[res.kind]}: ${res.kind === 'xlsx' ? pl(m.reqs.length, 'карточка', 'карточки', 'карточек') : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.${rs ? ' ' + rs : ''}`;
+        it.reg = rs;
         added.push(e);
       } catch (err) {
         it.state = 'err'; it.msg = err.message || String(err);
@@ -1953,7 +2223,8 @@
     if (added.length) bump();
     if (added.length === 1 && files.length === 1) {
       const m = modelOf(added[0]);
-      toast(`Документ добавлен: ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`, 3500);
+      const it0 = S.upload.items[0];
+      toast(`Документ добавлен: ${pl(m.reqs.length, 'требование', 'требования', 'требований')}.${it0 && it0.reg ? ' ' + it0.reg : ''}`, it0 && it0.reg ? 6000 : 3500);
       openDoc(added[0].key, '#/doc');
     } else if (parseHash().view === 'home') {
       render();
@@ -1962,8 +2233,9 @@
 
   async function removeDoc(key) {
     const e = entry(key);
-    if (!e || e.builtin) return;
+    if (!e || (e.builtin && !W.cloud)) return;
     W.docs = W.docs.filter((d) => d !== e);
+    if (e.included) registryRemove(e);
     W.models.delete(key);
     for (const l of W.links.filter((x) => x.from.startsWith(key + '|') || x.to.startsWith(key + '|'))) await removeLink(l);
     if (W.storage) await store().deleteDoc(key).catch(() => {});
@@ -2559,7 +2831,7 @@
     const nOv = W.docs.length ? overlapPairs().length : 0;
     let h = `<nav class="ws-nav" aria-label="Рабочее пространство">
       <a href="#/"${cur('home')}>${ICON.docs}<span>Документы</span><span class="count">${W.docs.length}</span></a>
-      <a href="#/common"${cur('common')}>${ICON.reg}<span>Общий реестр</span><span class="count">${commonList().length}</span></a>
+      <a href="#/common"${cur('common')}>${ICON.reg}<span>Общий реестр</span><span class="count">${commonCount()}</span></a>
       <a href="#/graph"${cur('graph')}>${ICON.graph}<span>Граф требований</span><span class="count">${W.links.length || ''}</span></a>
       <a href="#/overlaps"${cur('overlaps')}>${ICON.ov}<span>Пересечения</span><span class="count${nOv ? ' hot' : ''}">${nOv}</span></a>
     </nav>`;
@@ -2590,7 +2862,7 @@
     });
     h += `<hr><label class="menu-file dm-add" role="menuitem">${ICON.up}<span><b>Загрузить документы</b><span>Word, PDF, Excel-реестр или XML ИСМ</span></span><input type="file" class="up-input" multiple accept="${ACCEPT}"></label>
       <a role="menuitem" class="dm-item" href="#/">${ICON.docs}<span><b>Все документы</b><span>список, загрузка, настройки общего реестра</span></span></a>
-      <a role="menuitem" class="dm-item" href="#/common">${ICON.reg}<span><b>Общий реестр</b><span>${pl(commonList().length, 'карточка', 'карточки', 'карточек')} из ${pl(includedModels().length, 'документа', 'документов', 'документов')}</span></span></a>`;
+      <a role="menuitem" class="dm-item" href="#/common">${ICON.reg}<span><b>Общий реестр</b><span>${W.cloud ? `${W.reg.count == null ? 'в базе данных' : pl(W.reg.count, 'запись', 'записи', 'записей')}, один на всех` : `${pl(commonList().length, 'карточка', 'карточки', 'карточек')} из ${pl(includedModels().length, 'документа', 'документов', 'документов')}`}</span></span></a>`;
     $('#docMenuPanel').innerHTML = h;
   }
 
@@ -2604,10 +2876,15 @@
         <button type="button" role="menuitem" data-dl="zip"><b>Комплект документа архивом</b><span>XML, XSD, XSLT${m.entry.builtin ? ', рисунки' : ''} и build.bat для Windows</span></button><hr>`;
     }
     const n = commonList().length;
-    h += `<p class="menu-cap">Общий реестр</p>
+    h += W.cloud
+      ? `<p class="menu-cap">Общий реестр</p>
+      <button type="button" role="menuitem" data-dl="gxlsx"${W.reg.count === 0 ? ' disabled' : ''}><b>Общий реестр (Excel)</b><span>${W.reg.count == null ? 'из базы данных' : pl(W.reg.count, 'запись', 'записи', 'записей')}, один на всех пользователей</span></button>
+      <button type="button" role="menuitem" data-dl="all"${W.docs.length ? '' : ' disabled'}><b>Мои документы одним архивом</b><span>XML ваших документов, XSD и XSLT</span></button><hr>`
+      : `<p class="menu-cap">Общий реестр</p>
       <button type="button" role="menuitem" data-dl="cxlsx"${n ? '' : ' disabled'}><b>Общий реестр (Excel)</b><span>${pl(n, 'карточка', 'карточки', 'карточек')} всех документов реестра</span></button>
       <button type="button" role="menuitem" data-dl="cxml"${n ? '' : ' disabled'}><b>Общий реестр (XML ИСМ)</b><span>один документ, раздел на каждый источник</span></button>
-      <button type="button" role="menuitem" data-dl="all"${W.docs.length ? '' : ' disabled'}><b>Всё одним архивом</b><span>XML всех документов, общий реестр, XSD и XSLT</span></button><hr>
+      <button type="button" role="menuitem" data-dl="all"${W.docs.length ? '' : ' disabled'}><b>Всё одним архивом</b><span>XML всех документов, общий реестр, XSD и XSLT</span></button><hr>`;
+    h += `
       <p class="menu-cap">Модель данных</p>
       <button type="button" role="menuitem" data-dl="xsd"><b>XSD-схема</b><span>ism-regulation-v1.xsd, проверка XML</span></button>
       <button type="button" role="menuitem" data-dl="xsl"><b>XSLT-представление</b><span>ism-regulation-view.xsl, HTML из XML без приложения</span></button>`;
@@ -2617,7 +2894,7 @@
   function renderTabs(view, isWs) {
     let tabs;
     if (isWs) {
-      tabs = [['home', '#/', 'Документы', W.docs.length], ['common', '#/common', 'Общий реестр', commonList().length], ['graph', '#/graph', 'Граф требований', ''], ['overlaps', '#/overlaps', 'Пересечения', W.docs.length ? overlapPairs().length : 0]];
+      tabs = [['home', '#/', 'Документы', W.docs.length], ['common', '#/common', 'Общий реестр', commonCount()], ['graph', '#/graph', 'Граф требований', ''], ['overlaps', '#/overlaps', 'Пересечения', W.docs.length ? overlapPairs().length : 0]];
     } else {
       const m = M();
       const hasAuto = m.reqs.some((r) => r.verification && r.verification.checks.length);
@@ -2688,6 +2965,14 @@
     return { view: parts[0] || 'home', id: parts[1] || '', parts, params: new URLSearchParams(qi < 0 ? '' : raw.slice(qi + 1)) };
   }
   const rerender = () => { S.keepScroll = true; render(); };
+  // Обновить счётчики в меню и вкладках, не перерисовывая страницу
+  function refreshCounts() {
+    if (!W.ready || !$('#wsnav')) return;
+    let { view } = parseHash();
+    if (!WS_VIEWS[view] && !DOC_VIEWS[view]) view = 'home';
+    const isWs = !!WS_VIEWS[view] || !S.m;
+    renderTabs(view, isWs); renderSidebar(view); renderDocMenu(isWs); renderDlMenu(isWs);
+  }
 
   function render() {
     if (!W.ready) return;
@@ -2725,6 +3010,7 @@
         if (id) S.openReg.add(`${S.key}|${id}`);
       }
       if (view === 'common') ['crit', 'owner', 'done', 'q', 'ov', 'doc'].forEach((k) => { if (params.has(k)) S.cf[k] = params.get(k); });
+      if (view === 'common' && W.cloud && W.reg.rows && Date.now() - W.reg.at > 30000) W.reg.stale = true; // при каждом заходе — свежие записи коллег
       if (view === 'overlaps') {
         S.of.req = params.get('req') || '';
         S.of.doc = params.get('doc') || '';
@@ -2749,7 +3035,7 @@
     el.className = 'view' + (view === 'doc' ? '' : view === 'graph' ? ' full' : ' wide');
     if (view === 'req') renderReqResults();
     if (view === 'registry') renderRegistryResults();
-    if (view === 'common') renderCommonResults();
+    if (view === 'common') { if (W.cloud) renderSharedResults(); else renderCommonResults(); }
     if (view === 'overlaps') renderOverlapResults();
     if (view === 'graph') {
       if (fresh && params.get('doc')) G.sel = 'doc:' + params.get('doc');
@@ -2843,7 +3129,9 @@
         case 'xlsx': return await exportXlsx(m.reqs, `${safeName(m.id)} — реестр требований.xlsx`, docOrigin());
         case 'xlsx-filtered': return await exportXlsx(filteredReqs(), `${safeName(m.id)} — реестр требований (выборка).xlsx`, docOrigin());
         case 'xlsx-registry': { const l = filteredRegistry(); return await exportXlsx(l, `${safeName(m.id)} — реестр требований${l.length !== m.reqs.length ? ' (выборка)' : ''}.xlsx`, docOrigin()); }
-        case 'cxlsx': { const l = commonList(); return await exportXlsx(l, `Общий реестр требований ${todayRu()}.xlsx`, commonOrigin(l)); }
+        case 'gxlsx': return await exportShared(false);
+        case 'gxlsx-f': return await exportShared(true);
+        case 'cxlsx': { if (W.cloud) return await exportShared(false); const l = commonList(); return await exportXlsx(l, `Общий реестр требований ${todayRu()}.xlsx`, commonOrigin(l)); }
         case 'cxlsx-f': { const l = filteredCommon(); return await exportXlsx(l, `Общий реестр требований${l.length !== commonList().length ? ' (выборка)' : ''} ${todayRu()}.xlsx`, commonOrigin(l)); }
         case 'cxml': return saveBlob(xmlBlob(registryXml(commonList())), `common-registry-${ymd()}.xml`);
         case 'cxml-f': return saveBlob(xmlBlob(registryXml(filteredCommon())), `common-registry-${ymd()}${filteredCommon().length !== commonList().length ? '-selection' : ''}.xml`);
@@ -2875,9 +3163,9 @@
             used.add(n);
             dir.file(`documents/${n}`, e.xml);
           });
-          if (commonList().length) dir.file(`common-registry-${ymd()}.xml`, registryXml(commonList()));
+          if (commonList().length) dir.file(`${W.cloud ? 'my-documents-registry' : 'common-registry'}-${ymd()}.xml`, registryXml(commonList(), W.cloud ? { title: 'Реестр требований моих документов' } : {}));
           await kitFiles(dir);
-          dir.file('README.txt', `Выгрузка из приложения ИСМ XML, ${todayRu()}.\r\n\r\ndocuments/ — XML ИСМ каждого документа (${W.docs.length} шт.). Их можно загрузить в приложение у коллеги: кнопка «Загрузить».\r\ncommon-registry-*.xml — общий реестр требований одним документом ИСМ.\r\nism-regulation-v1.xsd — схема для проверки XML. build.bat собирает HTML-представление любого XML рядом с ним.\r\n`);
+          dir.file('README.txt', `Выгрузка из приложения ИСМ XML, ${todayRu()}.\r\n\r\ndocuments/ — XML ИСМ каждого документа (${W.docs.length} шт.). Их можно загрузить в приложение у коллеги: кнопка «Загрузить».\r\n${W.cloud ? 'my-documents-registry-*.xml — требования ваших документов, включённых в общий реестр, одним документом ИСМ.' : 'common-registry-*.xml — общий реестр требований одним документом ИСМ.'}\r\nism-regulation-v1.xsd — схема для проверки XML. build.bat собирает HTML-представление любого XML рядом с ним.\r\n`);
           saveBlob(await zip.generateAsync({ type: 'blob' }), `ИСМ-XML-${ymd()}.zip`);
           return toast('Архив готов');
         }
@@ -3040,6 +3328,23 @@
       if (on('#ovAll')) { S.of.req = ''; if (location.hash.includes('req=')) location.hash = '#/overlaps'; else renderOverlapResults(); return; }
       if (on('#moreOv')) { S.of.limit += 60; renderOverlapResults(); return; }
       if (on('#moreCommon')) { S.cf.limit = (S.cf.limit || 300) + 300; renderCommonResults(); return; }
+      if (on('#moreShared')) { S.gf.limit = (S.gf.limit || 300) + 300; renderSharedResults(); return; }
+      if ((x = on('[data-gfl]'))) {
+        S.gf[x.dataset.gfl] = x.dataset.v; S.gf.limit = 300;
+        $$(`[data-gfl="${x.dataset.gfl}"]`).forEach((b) => b.setAttribute('aria-pressed', String(b === x)));
+        renderSharedResults();
+        return;
+      }
+      if ((x = on('[data-gsrc]'))) {
+        S.gf.src = S.gf.src === x.dataset.gsrc ? '' : x.dataset.gsrc; S.gf.limit = 300;
+        $$('[data-gsrc]').forEach((b) => { const o = b.dataset.gsrc === S.gf.src; b.classList.toggle('on', o); b.setAttribute('aria-pressed', String(o)); });
+        if ($('#gsrc')) $('#gsrc').value = S.gf.src;
+        renderSharedResults();
+        return;
+      }
+      if (on('#resetGF')) { S.gf = freshGF(); rerender(); return; }
+      if (on('#regReload') || on('#regReload2')) { reloadShared(); if (on('#regReload2')) rerender(); return; }
+      if (on('#addExample')) { addExample(); return; }
       if ((x = on('[data-rowner]'))) {
         S.rf.owner = S.rf.owner === x.dataset.rowner ? '' : x.dataset.rowner;
         $$('[data-rowner]').forEach((b) => { const o = b.dataset.rowner === S.rf.owner; b.classList.toggle('on', o); b.setAttribute('aria-pressed', String(o)); });
@@ -3049,7 +3354,7 @@
       if ((x = on('[data-reg]'))) {
         const id = x.dataset.reg;
         if (S.openReg.has(id)) S.openReg.delete(id); else S.openReg.add(id);
-        if ($('#comResults')) renderCommonResults(); else renderRegistryResults();
+        if ($('#comResults')) renderCommonResults(); else if ($('#sharedResults')) renderSharedResults(); else renderRegistryResults();
         const btn = $(`[data-reg="${CSS.escape(id)}"]`);
         if (btn) btn.focus();
         return;
@@ -3068,8 +3373,12 @@
         if (S.confirmDel !== '*') { S.confirmDel = '*'; x.textContent = 'Удалить все загруженные? Нажмите ещё раз'; return; }
         S.confirmDel = '';
         (async () => {
-          for (const e of W.docs.filter((d) => !d.builtin)) { W.models.delete(e.key); if (W.storage) await store().deleteDoc(e.key).catch(() => {}); }
-          W.docs = W.docs.filter((d) => d.builtin);
+          for (const e of W.docs.filter((d) => !d.builtin || W.cloud)) {
+            W.docs = W.docs.filter((d) => d !== e);
+            if (e.included) registryRemove(e);
+            W.models.delete(e.key);
+            if (W.storage) await store().deleteDoc(e.key).catch(() => {});
+          }
           if (!entry(S.key)) { S.key = ''; S.m = null; if (W.docs[0]) useDoc(W.docs[0].key); }
           S.upload = null;
           bump(); toast('Загруженные документы удалены'); rerender();
@@ -3108,6 +3417,7 @@
       if (t.id === 'fq') { S.f.q = t.value; renderReqResults(); }
       if (t.id === 'rq') { S.rf.q = t.value; renderRegistryResults(); }
       if (t.id === 'cq') { S.cf.q = t.value; S.cf.limit = 300; renderCommonResults(); }
+      if (t.id === 'gq') { S.gf.q = t.value; S.gf.limit = 300; renderSharedResults(); }
       if (t.id === 'ovMin') {
         S.of.min = Number(t.value) / 100; S.of.limit = 60;
         $('#ovMinVal').textContent = `${t.value} %`;
@@ -3119,6 +3429,11 @@
       const t = ev.target;
       if (t.dataset.fsel) { S.f[t.dataset.fsel] = t.value; renderReqResults(); }
       if (t.dataset.csel) { S.cf[t.dataset.csel] = t.value; S.cf.limit = 300; renderCommonResults(); }
+      if (t.id === 'gsrc') {
+        S.gf.src = t.value; S.gf.limit = 300;
+        $$('[data-gsrc]').forEach((b) => { const o = b.dataset.gsrc === S.gf.src; b.classList.toggle('on', o); b.setAttribute('aria-pressed', String(o)); });
+        renderSharedResults();
+      }
       if (t.id === 'ovMin') { renderSidebar(); renderTabs('overlaps', true); }
       if (t.dataset.gt) { G.f[t.dataset.gt] = t.checked; renderGraph(true); }
       if (t.id === 'ovDoc') { S.of.doc = t.value; S.of.limit = 60; renderOverlapResults(); }
@@ -3129,7 +3444,13 @@
       if (t.dataset.doctype) { setDocType(t.dataset.doctype, t.value); return; }
       if (t.dataset.include) {
         const e = entry(t.dataset.include);
-        if (e) { e.included = t.checked; persist(e); bump(); rerender(); toast(t.checked ? 'Документ включён в общий реестр' : 'Документ исключён из общего реестра'); }
+        if (e) {
+          e.included = t.checked;
+          persist(e);
+          if (!t.checked) registryRemove(e);
+          bump(); rerender();
+          toast(t.checked ? `Документ включён в общий реестр${W.cloud ? ': требования добавляются' : ''}` : `Документ исключён из общего реестра${W.cloud ? ', его записи убраны' : ''}`);
+        }
       }
       if (t.dataset.cl) {
         const o = loadChecks(); if (t.checked) o[t.dataset.cl] = 1; else delete o[t.dataset.cl]; saveChecks(o);
@@ -3255,6 +3576,7 @@
         checkLocalDocs();
       }
       render();
+      if (W.cloud) { refreshRegCount(); reconcileRegistry(); }
     } catch (e) {
       $('#view').innerHTML = `<div class="empty"><p><b>Не удалось запустить приложение.</b> ${esc(e.message)}</p></div>`;
     }
@@ -3294,7 +3616,7 @@
           <li>Загрузка регламентов из Word, PDF, Excel и XML, разметка атомарных требований</li>
           <li>Бизнес- и системные требования, владельцы, критичность, карточки корпоративного реестра</li>
           <li>Граф требований по уровням документов: от политик до записей</li>
-          <li>Ваши документы видите только вы</li>
+          <li>Ваши документы видите только вы, общий реестр требований — один на всех</li>
         </ul>
       </section>
       <section class="auth-card">
@@ -3357,7 +3679,7 @@
 
   /* ---------- Личный кабинет ---------- */
   function viewAccount() {
-    let h = '<div class="page-head"><div><h1>Личный кабинет</h1><p>Учётная запись и ваши данные в базе. Документы и карточки видите только вы.</p></div></div>';
+    let h = '<div class="page-head"><div><h1>Личный кабинет</h1><p>Учётная запись и ваши данные в базе. Документы и карточки видите только вы; требования документов, включённых в общий реестр, видны всем пользователям.</p></div></div>';
     if (!W.cloud) {
       return h + `<div class="acc-grid"><section class="acc-card"><h2>Вход не подключён</h2>
         <p>Приложение работает без учётных записей: документы хранятся только в этом браузере. Регистрация по почте, личный кабинет и база данных включаются, когда администратор подключает проект Supabase — инструкция в README репозитория, раздел «База данных и вход».</p></section></div>`;
@@ -3394,7 +3716,7 @@
           <div><span class="lbl">Бизнес / системные</span><b><span class="cb">${reqs.length - nSys}</span> / <span class="cs">${nSys}</span></b></div>
           <div><span class="lbl">Связей-оснований</span><b>${W.links.length}</b></div>
         </div>
-        <p class="muted">База данных: ${esc(window.ISM.cloud.host)}. Таблицы: виды документов, документы, требования, связи требований, отметки «не дубль», настройки. Доступ к строкам ограничен вашей учётной записью.</p>
+        <p class="muted">База данных: ${esc(window.ISM.cloud.host)}. Таблицы: виды документов, документы, требования, связи требований, отметки «не дубль», настройки — доступ ограничен вашей учётной записью; общий реестр требований — один на всех пользователей.</p>
         <div class="head-actions"><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Скачать всё одним архивом</button><a class="btn btn-sm" href="#/">${ICON.docs}К документам</a></div>
       </section>
     </div>`;
@@ -3435,6 +3757,6 @@
     rerender();
   }
   window.ISM = window.ISM || {};
-  window.ISM.app = { state: S, workspace: W, render };
+  window.ISM.app = { state: S, workspace: W, render, registryPayload: (key) => registryPayload(modelOf(entry(key))) };
   boot();
 })();

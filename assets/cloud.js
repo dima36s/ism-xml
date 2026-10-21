@@ -2,7 +2,8 @@
    Вход: регистрация по почте и паролю и вход по почте и паролю, без подтверждения почты
    (в проекте Supabase выключено Authentication → Sign In / Providers → Email → Confirm email).
    Учётные записи и пароли хранит Supabase Auth; документы, требования, связи — таблицы из supabase/setup.sql.
-   Хранилище повторяет интерфейс ISM.store (store.js), поэтому приложение работает с ним так же, как с IndexedDB. */
+   Хранилище повторяет интерфейс ISM.store (store.js), поэтому приложение работает с ним так же, как с IndexedDB.
+   Общий реестр требований (registry) — одна таблица на всех пользователей, пополняется функцией registry_sync. */
 (() => {
   'use strict';
   const cfg = window.ISM_CONFIG || {};
@@ -47,7 +48,7 @@
       [/same.*password|new password should be different/i, 'Новый пароль совпадает со старым.'],
       [/reauthenticat/i, 'Для смены пароля нужно заново войти в приложение.'],
       [/failed to fetch|network/i, 'Нет связи с сервером базы данных. Проверьте интернет.'],
-      [/could not find the (table|function)|schema cache|relation .* does not exist|function .* does not exist|PGRST20[25]/i, 'База данных проекта ещё не настроена: выполните supabase/setup.sql в SQL Editor Supabase.'],
+      [/could not find the (table|function)|schema cache|relation .* does not exist|function .* does not exist|PGRST20[25]/i, 'База данных проекта не настроена или устарела: выполните последнюю версию supabase/setup.sql в SQL Editor Supabase.'],
       [/jwt|not authenticated|нужно войти/i, 'Сеанс истёк. Войдите снова.'],
     ];
     if (sec) return `Повторить можно через ${sec[1]} с.`;
@@ -100,6 +101,7 @@
       const c = await client();
       check(await c.from('profiles').update({ full_name: fields.full_name || null }).eq('id', uid));
     },
+    uid: () => uid,
     async onChange(cb) {
       const c = await client();
       c.auth.onAuthStateChange((event, session) => { uid = session ? session.user.id : null; cb(event, session); });
@@ -186,6 +188,41 @@
     },
   };
 
+  /* ---------- Общий реестр требований: один на всех пользователей ---------- */
+  // Обозначение документа ИСМ (C2.4.1.MTH.01) — общий ключ; документ без обозначения — свой у каждого пользователя.
+  // Правило совпадает с функцией registry_source в setup.sql.
+  const ISM_CODE = /^[A-ZА-Я]\d+(?:\.\d+)+\.[A-Z]{2,5}\.\d{2,3}$/;
+  const REG_FIELDS = 'id,source_key,req_id,pos,card_id,doc_code,doc_title,doc_version,doc_type,statement,modality,category,complete,cols,added_by,added_at,updated_at';
+  const PAGE = 1000; // столько строк Supabase отдаёт за один запрос
+  const registry = {
+    sourceOf: (code) => (ISM_CODE.test(code || '') ? code : `${uid || '-'}/${String(code || '').trim() || 'без обозначения'}`),
+    async count() {
+      const c = await client();
+      const { count, error } = await c.from('registry_entries').select('id', { count: 'exact', head: true });
+      if (error) fail(error);
+      return count || 0;
+    },
+    async all() {
+      const c = await client();
+      const out = [];
+      for (let from = 0; ; from += PAGE) {
+        const rows = check(await c.from('registry_entries').select(REG_FIELDS).order('doc_code').order('source_key').order('pos').order('id').range(from, from + PAGE - 1)) || [];
+        out.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return out;
+    },
+    // doc: {code, title, version, type}; rows: [{req_id, card_id, statement, modality, category, complete, cols}]
+    async sync(doc, rows) {
+      const c = await client();
+      return check(await c.rpc('registry_sync', { p_doc: doc, p_rows: rows })) || {};
+    },
+    async remove(code) {
+      const c = await client();
+      return check(await c.rpc('registry_remove', { p_code: code || '' })) || 0;
+    },
+  };
+
   window.ISM = window.ISM || {};
-  window.ISM.cloud = { enabled, auth, store, urlEvent, urlError, ru, host: enabled ? cfg.supabaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '' };
+  window.ISM.cloud = { enabled, auth, store, registry, urlEvent, urlError, ru, host: enabled ? cfg.supabaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '' };
 })();

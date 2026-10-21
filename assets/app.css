@@ -1004,3 +1004,20 @@ body.drag-files .drop-hint { display: grid; }
   main { padding: 0; }
   body { background: #fff; }
 }
+
+/* ---------- Общий реестр из базы данных ---------- */
+.sd-table { max-width: 1120px; margin: 0 0 16px; background: var(--sheet); border: 1px solid var(--rule); }
+.sd-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 170px 92px; gap: 4px 14px; align-items: baseline; width: 100%; padding: 8px 14px; border: 0; border-top: 1px solid var(--rule-soft); background: none; font: inherit; color: inherit; text-align: left; }
+.sd-row.sd-head { border-top: 0; font-size: 12.5px; color: var(--ink-3); padding-top: 7px; padding-bottom: 7px; }
+button.sd-row { cursor: pointer; }
+button.sd-row:hover { background: var(--accent-wash); }
+.sd-row.on { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
+.sd-doc { min-width: 0; }
+.sd-doc b { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.sd-n { font-variant-numeric: tabular-nums; font-weight: 600; }
+.dc-reg { font-size: 12.5px; margin: 4px 0 0; }
+@media (max-width: 720px) {
+  .sd-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sd-who, .sd-at, .sd-head span:nth-child(n+3) { display: none; }
+}
+.empty .link-btn { font-size: inherit; }
