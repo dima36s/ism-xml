@@ -48,6 +48,7 @@
       [/same.*password|new password should be different/i, 'Новый пароль совпадает со старым.'],
       [/reauthenticat/i, 'Для смены пароля нужно заново войти в приложение.'],
       [/failed to fetch|network/i, 'Нет связи с сервером базы данных. Проверьте интернет.'],
+      [/documents_source_kind_check/i, 'База данных не принимает файлы этого вида: выполните последнюю версию supabase/setup.sql в SQL Editor Supabase.'],
       [/could not find the (table|function)|schema cache|relation .* does not exist|function .* does not exist|PGRST20[25]/i, 'База данных проекта не настроена или устарела: выполните последнюю версию supabase/setup.sql в SQL Editor Supabase.'],
       [/jwt|not authenticated|нужно войти/i, 'Сеанс истёк. Войдите снова.'],
     ];

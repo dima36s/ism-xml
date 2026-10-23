@@ -1,9 +1,11 @@
 /* ИСМ XML — разбор загруженных документов в XML ИСМ прямо в браузере.
-   .docx — по стилям и нумерации Word; PDF — по текстовому слою (pdf.js);
+   .docx — по стилям и нумерации Word; .doc (Word 97–2003) — так же, через doc.js; PDF — по текстовому слою (pdf.js);
+   Visio .vsdx — через visio.js: страница — раздел с рисунком схемы, дорожки и шаги — таблица «Участник — Действие»;
    Excel — по заголовкам столбцов корпоративного реестра; XML ИСМ — как есть.
    Требования выделяются правилами: предложение со словами «должен», «следует»,
    «необходимо», «не допускается» и т. п. становится атомарным требованием
-   с дословной цитатой. Описательные требования без таких слов не выделяются. */
+   с дословной цитатой; описательные обязанности («ФЗ утверждает ФМ», «ФМ согласовывается»,
+   перечни под заголовками требований, таблицы ответственности) — требованием с выведенной модальностью. */
 (() => {
   'use strict';
   const NS = 'urn:protech:ism:regulation:1.0';
@@ -13,6 +15,8 @@
     exceljs: 'assets/vendor/exceljs.min.js',
     pdf: 'assets/vendor/pdf.min.js',
     pdfWorker: 'assets/vendor/pdf.worker.min.js',
+    doc: 'assets/doc.js',
+    visio: 'assets/visio.js',
   };
 
   /* ---------- Утилиты ---------- */
@@ -42,10 +46,10 @@
   const B = '(?<![а-яёa-z])';
   const E = '(?![а-яёa-z])';
   const RX = {
-    shallNot: new RegExp(`${B}(не\\s+допуска(?:ется|ются)|недопустим[а-яё]*|запрещ(?:ается|аются|ено|ена|ены)|не\\s+долж(?:ен|на|но|ны)|не\\s+следует|не\\s+разреша(?:ется|ются))${E}`, 'iu'),
+    shallNot: new RegExp(`${B}(не\\s+допуска(?:ется|ются)|недопустим[а-яё]*|запрещ(?:ается|аются|ено|ена|ены)|не\\s+долж(?:ен|на|но|ны)|не\\s+следует|не\\s+разреша(?:ется|ются)|нельзя|не\\s+(?:может|могут)\\s+(?:быть|превышать|составлять|использоваться|применяться|передаваться))${E}`, 'iu'),
     should: new RegExp(`${B}(рекоменду(?:ется|ются)|желательно|целесообразно)${E}`, 'iu'),
-    shall: new RegExp(`${B}(долж(?:ен|на|но|ны)|следует|необходимо|обязан[аоы]?|требу(?:ется|ются)|подлеж(?:ит|ат)|надлежит)${E}`, 'iu'),
-    may: new RegExp(`${B}(допуска(?:ется|ются)|разреша(?:ется|ются))${E}`, 'iu'),
+    shall: new RegExp(`${B}(долж(?:ен|на|но|ны)|следует|необходимо|обязан[аоы]?|обязательн(?:ы|а|о)\\s+для|в\\s+обязательном\\s+порядке|требу(?:ется|ются)|подлеж(?:ит|ат)|надлежит)${E}`, 'iu'),
+    may: new RegExp(`${B}(допуска(?:ется|ются)|разреша(?:ется|ются)|вправе|(?:имеет|имеют)\\s+право)${E}`, 'iu'),
   };
   function modalityOf(text) {
     const t = String(text);
@@ -54,6 +58,90 @@
     if (RX.shall.test(t)) return 'shall';
     if (RX.may.test(t)) return 'may';
     return null;
+  }
+
+  /* ---------- Неявные требования ---------- */
+  // В регламентах обязанность часто записана без «должен»: «ФЗ утверждает ФМ», «ФМ согласовывается с владельцами»,
+  // «Функции приводятся с указанием ограничений», перечни под заголовком «Требования к содержанию раздела».
+  const ACT_V = ['утвержда', 'согласовыва', 'разрабатыва', 'обеспечива', 'осуществля', 'выполня', 'назнача', 'контролиру', 'организу', 'предоставля',
+    'направля', 'переда', 'передава', 'рассматрива', 'принима', 'информиру', 'уведомля', 'актуализиру', 'оптимизиру', 'формиру', 'подготавлива',
+    'подписыва', 'регистриру', 'публику', 'проверя', 'оценива', 'анализиру', 'устанавлива', 'описыва', 'обознача', 'указыва', 'перечисля', 'излага',
+    'использу', 'применя', 'интегриру', 'оформля', 'фиксиру', 'составля', 'заполня', 'размеща', 'отправля', 'созда', 'обновля', 'пересматрива',
+    'корректиру', 'учитыва', 'сохраня', 'архивиру', 'запрашива', 'отража', 'выделя', 'соблюда', 'отслежива', 'сопровожда', 'поддержива',
+    'извеща', 'визиру', 'исполня', 'возлага', 'закрепля', 'планиру', 'документиру', 'тестиру', 'внедря', 'доводя', 'утвержд', 'заключа', 'расторга',
+    'продлева', 'приостанавлива', 'возобновля', 'фиксиру', 'вывешива', 'доставля', 'выдава', 'оплачива', 'начисля', 'списыва', 'инвентаризиру',
+    'маркиру', 'упаковыва', 'транспортиру', 'обрабатыва', 'вырабатыва', 'присваива', 'согласу', 'координиру', 'куриру', 'инструктиру', 'обуча',
+    'возвраща', 'отклоня', 'одобря', 'созыва', 'избира', 'рассыла', 'собира', 'выявля', 'устраня', 'сверя', 'блокиру', 'уполномочива', 'контролир'];
+  const ACT_C = ['провод', 'вед', 'хран', 'готов', 'привод', 'внос', 'довод', 'доклад', 'вруч', 'осуществ', 'определ', 'представ', 'направ', 'устран', 'провер',
+    'утверд', 'созд', 'устанав', 'назнач', 'выдел', 'возлож', 'одобр', 'обеспеч', 'отмеч', 'выпуск', 'уничтож', 'плат', 'перевод', 'сообщ', 'вынос', 'нес'];
+  const VERB_RX = new RegExp(`(?<![а-яё])(?:(?:${ACT_V.join('|')})(?:ет|ют|ется|ются|ёт|ётся)|(?:${ACT_C.join('|')})(?:ит|ят|ится|ятся|ет|ёт|ут|ется|ётся|утся))(?![а-яё])`, 'iu');
+  const ROLE_RX = /(?<![а-яё])(подразделени|отдел(?:ы|а|ом)?(?![а-яё])|служб|департамент|дирекци|управлени[еяю](?=\s+[а-яё])|владел|руководител|менеджер|работник|сотрудник|специалист|исполнител|ответственн|заказчик|пользовател|администратор|аналитик|разработчик|комисси|директор|начальник|инициатор|автор|куратор|эксперт|оператор|участник|член|секретар|методолог|координатор|лиц[оа](?![а-яё])|комитет|подрядчик|поставщик|работодател|персонал|инженер|технолог|бухгалтер|юрист|архитектор|тестировщик|контрол[её]р|аудитор|представител|заместител|председател|правлени|совет(?![а-яё])|собственник)/iu;
+  const NOT_ROLE_ABBR = new Set(['ФМ', 'ИС', 'АС', 'ПО', 'БД', 'ЛНА', 'ИСМ', 'НСИ', 'ТЗ', 'РФ', 'ГОСТ', 'СНИП', 'ТУ', 'ОТ', 'ПБ', 'СМК', 'ERP', 'BPMN', 'DFD', 'BI', 'API', 'XML', 'PDF', 'ИТ', 'IT', 'КПЭ', 'KPI', 'ОРД', 'ДИ', 'СТО']);
+  const roleAbbr = (s) => (s.match(/(?<![А-ЯЁA-Za-zа-яё])[А-ЯЁ]{2,5}(?![А-ЯЁA-Za-zа-яё])/g) || []).some((a) => !NOT_ROLE_ABBR.has(a));
+  const DOC_SELF = /^(?:(?:настоящ|данн)[а-яё]*\s+)?(?:методик|документ|положени|регламент|стандарт|инструкци|политик|процедур|порядок|правила)[а-яё]*(?:\s|$)/iu;
+  const DEFINITION = /^[^,:;]{1,80}?\s[–—-]\s|^[^,:;]{1,60}?\s-\s?это\s|\sпредставля(?:ет|ют)\s+собой\s/iu;
+  const SHORT_PART = /(?<![а-яё])(сформулирован|представлен|изображен|обозначен|указан|определен|установлен|утвержден|согласован|оформлен|предусмотрен|описан|отражен|включен|приведен|выделен|зафиксирован|назначен|разработан|подписан|зарегистрирован|доведен|направлен|размещен|заполнен|составлен|обеспечен|учтен|учтён|согласована)(?:ы|а|о)?(?![а-яё])/iu;
+  const COMPOSE = /(?<![а-яё])(включа(?:ет|ют)(?:\s+в\s+себя)?|содерж(?:ит|ат)|состо(?:ит|ят)\s+из|предусматрива(?:ет|ют)|охватыва(?:ет|ют))(?![а-яё])/iu;
+  // «Ключевым элементом … является …», «Его задача заключается в …» — только такие «является» считаются требованием
+  const IS_RX = /^(?:ключев|основн|главн|обязательн|неотъемлем|важнейш|единствен|первоочередн)[а-яё]*\s+(?:[а-яё]+\s+)?(?:элемент|цел|задач|част|услови|требовани|принцип|результат|составляющ)[а-яё]*\s.*?(?<![а-яё])явля(?:ется|ются)(?![а-яё])|(?<![а-яё])(?:задач|цел|назначени)[а-яё]*(?:\s+[^.]{0,80}?)?\s(?:заключа(?:ется|ются)|состо(?:ит|ят))\s+в(?![а-яё])/iu;
+  const RESP = /(?<![а-яё])ответственност[а-яё]*\s+за\s.+?(?<![а-яё])нес(?:[её]т|ут)(?![а-яё])|(?<![а-яё])нес(?:[её]т|ут)\s+(?:персональную\s+|личную\s+)?ответственност/iu;
+  const ATTENTION = /(?<![а-яё])(особое\s+)?внимание\s+(?:следует\s+)?уделя(?:ется|ют)|уделя(?:ется|ют)\s+(?:особое\s+)?внимание/iu;
+  const VN = /^(?:[а-яё]+(?:ое|ая|ий|ый|ее|ие|ые|ой)\s+){0,2}(описани|обозначени|изложени|перечислени|стандартизаци|минимизаци|определени|указани|разделени|наличи|использовани|соблюдени|обеспечени|проведени|согласовани|утверждени|актуализаци|подготовк|контрол|хранени|регистраци|оформлени|разработк|формировани|ведени[ея]|предоставлени|назначени[ея]\s|выполнени|осуществлени|анализ|оценк|проверк|мониторинг|фиксаци|документировани|информировани|уведомлени|рассмотрени|направлени[ея]\s|организаци|планировани|уч[её]т|отражени|детализаци|классификаци|демонстраци|завершени|применени|установлени|представлени|включени|выявлени|устранени|исключени|сохранени|архивировани|доведени|отображени|визуализаци|ограничени|разграничени|защит|резервировани|копировани|тестировани|обучени|инструктаж|привязк|сопровождени|поддержани|приведени|получени|передач|размещени|публикаци|подписани|визировани|заключени|ознакомлени|экспертиз|консультировани|взаимодействи|инвентаризаци|расследовани|аттестаци|сертификаци|калибровк|поверк)[а-яё]*/iu;
+  const NORM_TITLE = /требовани|правил|принцип|порядок|обязанност|ответственност|полномочи|запрет|ограничени|услови[яй] (?:выполнени|проведени|применени)/iu;
+  const NO_IMPLICIT = /термин|сокращени|определени|обозначени|область применения|назначение документа|нормативн\S* ссылк|ссылки|библиограф|истори\S* изменени|регистраци\S* изменени|лист (?:согласования|ознакомления)|приложени\S* \S+\s*$/iu;
+
+  // Модальность предложения без «должен»: {mod, why} или null. norm — пункт в разделе с требованиями или правилами.
+  function implicitOf(s, inNorm) {
+    const t = String(s).trim();
+    if (t.length < 12 || /\?$/.test(t)) return null;
+    if (ATTENTION.test(t)) return 'should';
+    if (RESP.test(t)) return 'shall';
+    const def = DEFINITION.test(t);
+    const v = VERB_RX.exec(t);
+    if (v && !def) {
+      const subj = t.slice(0, v.index).split(/[:;]/).pop(); // подлежащее — после последнего двоеточия
+      const passive = /ся$/i.test(v[0]);
+      const words = subj.split(/\s+/).filter(Boolean).length;
+      if (!/(?<![а-яё])(котор|чтобы|что(?![а-яё]))/iu.test(subj) && words <= 14 && !DOC_SELF.test(subj.replace(/^[,\s]+/, ''))) {
+        if (passive && !/(?<![а-яё])позволя/iu.test(t)) return 'shall';
+        if (!passive && (ROLE_RX.test(subj) || roleAbbr(subj))) return 'shall';
+      }
+    }
+    if (!inNorm) return null;
+    // «ФМ представляет собой описание, которое включает две составляющие» — в разделе требований это требование к составу
+    if (def && !(COMPOSE.test(t) && !/^[^,:;]{1,80}?\s[–—-]\s/u.test(t))) return null;
+    if (COMPOSE.test(t) || IS_RX.test(t) || SHORT_PART.test(t)) return 'shall';
+    return null;
+  }
+  // Пункт перечня — именная группа («подробное изложение этапов…», «обозначение форматов хранения»)
+  const nominalItem = (s) => { const x = String(s).trim(); const c = x.indexOf(': '); return VN.test(x) || (c > 0 && c < 90 && VN.test(x.slice(c + 2))); };
+  // Таблица ответственности: «Участник | Функция», «Действие | Ответственный | Срок»
+  function dutyTable(rows) {
+    if (!rows || rows.length < 2) return null;
+    const head = rows[0].map(cellText);
+    const who = head.findIndex((h) => /^(участник|роль|ответственн|исполнител|подразделени|должност|кто|субъект)/iu.test(h));
+    const what = head.findIndex((h, i) => i !== who && /^(функци|действи|операци|шаг|мероприяти|работ[аы]|наименование (?:этапа|работ|операци|действи|мероприяти)|содержание|этап|обязанност|ответственност|полномочи|задач|что делает)/iu.test(h));
+    if (who < 0 || what < 0) return null;
+    const when = head.findIndex((h, i) => i !== who && i !== what && /^(срок|когда|периодичност|время)/iu.test(h));
+    return { who, what, when };
+  }
+  // «A должен X, а также Y» → два требования; Y — инфинитив или краткое причастие после «должен быть»
+  function splitAlso(s) {
+    const parts = s.split(/,\s+а\s+также\s+|;\s+а\s+также\s+/u);
+    if (parts.length !== 2) return [s];
+    const m = parts[0].match(/^(.*?(?<![а-яё])(?:не\s+)?(?:долж(?:ен|на|но|ны)|обязан[аоы]?|следует|необходимо|требуется)(?![а-яё]))(\s+быть)?/iu);
+    if (!m) return [s];
+    const second = parts[1].trim();
+    const first = parts[0].trim();
+    const w = second.split(/\s+/);
+    const firstWord = /^(четко|чётко|подробно|детально|полностью|ясно|наглядно|обязательно|своевременно|также)$/i.test(w[0]) ? 1 : 0;
+    const head = (w[firstWord] || '').toLowerCase();
+    if (/(ть|ться|ти|чь)$/.test(head) && !m[2]) return [first, `${m[1]} ${second}`];
+    if (m[2] && /(н|ны|на|но|ен|ён)$/.test(head)) {
+      const agree = /ны$/.test(head) ? 'должны' : /на$/.test(head) ? 'должна' : /но$/.test(head) ? 'должно' : 'должен';
+      return [first, `${m[1].replace(/долж(?:ен|на|но|ны)$/iu, agree)}${m[2]} ${second}`];
+    }
+    return [s];
   }
 
   /* ---------- Предложения ---------- */
@@ -145,7 +233,7 @@
     const ids = new Set();
     const uid = (base) => { let x = base, i = 2; while (ids.has(x)) x = `${base}-${i++}`; ids.add(x); return x; };
     const code = ncname(meta.id || opts.fileStem, 'DOC').toUpperCase().replace(/^N(?=\d)/, 'D');
-    const report = { sections: 0, clauses: 0, requirements: 0, explicit: 0, derived: 0, tables: 0, terms: 0, warnings: [] };
+    const report = { sections: 0, clauses: 0, requirements: 0, explicit: 0, implicit: 0, derived: 0, tables: 0, terms: 0, warnings: [] };
     const terms = [];
     const refs = [];
     const objects = new Map();
@@ -198,6 +286,7 @@
     let lastList = null;
 
     body.forEach((b) => {
+      if (b.type === 'figure') { target().text.push({ kind: 'figure', src: b.src, alt: b.alt }); lastList = null; return; }
       if (b.type === 'table') {
         report.tables++;
         if (isTermsTable(b)) {
@@ -278,29 +367,69 @@
           temp: `TEMP-${today}-${String(tempNo++).padStart(3, '0')}`,
         });
         report.requirements++;
-        if (basis === 'explicit') report.explicit++;
+        if (basis === 'explicit') report.explicit++; else report.implicit++;
         if (source === 'derived') report.derived++;
       };
+      // Раздел с требованиями или правилами: там описательные формулировки и перечни — тоже требования
+      const lead0 = c.text[0] && c.text[0].kind === 'p' ? c.text[0].text : '';
+      const inNorm = !NO_IMPLICIT.test(sec.title || '') && (NORM_TITLE.test(sec.title || '') || NORM_TITLE.test(lead0) || !!c.normCtx);
+      const quiet = NO_IMPLICIT.test(sec.title || '');
+      c.subs.forEach((sc) => { sc.normCtx = inNorm || NORM_TITLE.test(lead0); });
+      const sentence = (s, src = 'authoritative') => {
+        const m = modalityOf(s);
+        if (m) { splitAlso(s).forEach((x, k) => add(finish(x), s, m, 'explicit', k ? 'derived' : src)); return true; }
+        if (quiet) return false;
+        const im = implicitOf(s, inNorm);
+        if (im) { add(finish(s), s, im, 'implicit', src); return true; }
+        return false;
+      };
+      // Подзаголовок внутри пункта: с заглавной буквы, коротко, без глагола-действия; или вводная фраза с двоеточием
+      const headingLike = (x) => /:\s*$/.test(x) || (/^[«"(]?[А-ЯЁA-Z0-9]/.test(x) && x.length <= 120 && !/[.!?;]$/.test(x) && !VERB_RX.test(x) && !modalityOf(x));
       for (let i = 0; i < c.text.length; i++) {
         const blk = c.text[i];
         if (blk.kind === 'p') {
           const next = c.text[i + 1];
           const leadMod = modalityOf(blk.text);
-          if (leadMod && /:\s*$/.test(blk.text) && next && next.kind === 'list') {
-            const lead = blk.text.replace(/:\s*$/, '');
+          const leadText = blk.text.replace(/:\s*$/, '');
+          if (next && next.kind === 'list' && headingLike(blk.text)) {
+            const compose = COMPOSE.test(leadText);
+            const normLead = inNorm || NORM_TITLE.test(leadText) || compose || !!leadMod;
             next.items.forEach((it) => {
-              const own = modalityOf(it);
-              if (own) sentences(it).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); });
-              else add(finish(`${lead} ${lowerFirst(it.replace(/[;.,]\s*$/, ''))}`), it.replace(/[;.]\s*$/, '').trim(), leadMod, 'explicit', 'derived');
+              const item = it.replace(/[;.,:]\s*$/, '').trim();
+              if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
+              if (quiet || !normLead || DEFINITION.test(item)) return;
+              if (leadMod || compose) add(finish(`${leadText} ${lowerFirst(item)}`), item, leadMod || 'shall', leadMod ? 'explicit' : 'implicit', 'derived');
+              else if (nominalItem(item)) add(finish(`${leadText}: ${lowerFirst(item)}`), item, 'shall', 'implicit', 'derived');
             });
             i++;
             continue;
           }
-          sentences(blk.text).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); });
+          if (headingLike(blk.text) && !modalityOf(blk.text) && !/:\s/.test(blk.text)) continue; // подзаголовок внутри пункта
+          let found = false;
+          sentences(blk.text).forEach((s) => { if (sentence(s)) found = true; });
+          // «Четкость и простота структуры: минимизация количества пересекающихся линий»
+          if (!found && inNorm && !quiet && /^[^:]{3,80}:\s/.test(blk.text) && nominalItem(blk.text)) add(finish(blk.text), blk.text, 'shall', 'implicit', 'authoritative');
         } else if (blk.kind === 'list') {
-          blk.items.forEach((it) => sentences(it).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); }));
+          blk.items.forEach((it) => {
+            const item = it.replace(/[;.,:]\s*$/, '').trim();
+            if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
+            if (inNorm && !quiet && !DEFINITION.test(item) && nominalItem(item)) add(finish(item), item, 'shall', 'implicit', 'authoritative');
+          });
         } else if (blk.kind === 'table') {
-          blk.rows.forEach((r) => r.forEach((cell) => (cell.lines || []).forEach((ln) => sentences(ln).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); }))));
+          const duty = quiet ? null : dutyTable(blk.rows);
+          if (duty) {
+            blk.rows.slice(1).forEach((r) => {
+              const who = cellText(r[duty.who]);
+              const when = duty.when >= 0 ? cellText(r[duty.when]) : '';
+              const lines = (r[duty.what] && r[duty.what].lines ? r[duty.what].lines : []).flatMap((ln) => ln.split(/;\s*/)).map(norm).map((x) => x.replace(/[;.,]\s*$/, '')).filter(Boolean);
+              lines.forEach((ln) => {
+                const m = modalityOf(ln);
+                add(finish(`${who ? who + ': ' : ''}${who ? lowerFirst(ln) : ln}${when ? ` (срок: ${when})` : ''}`), ln, m || 'shall', m ? 'explicit' : 'implicit', 'derived');
+              });
+            });
+          } else {
+            blk.rows.forEach((r) => r.forEach((cell) => (cell.lines || []).forEach((ln) => sentences(ln).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); }))));
+          }
         }
       }
       c.reqs = out;
@@ -338,6 +467,7 @@
 
     const textNode = (blocks) => el('text', {}, blocks.map((b) => {
       if (b.kind === 'p') return el('p', {}, b.text);
+      if (b.kind === 'figure') return el('figure', { src: b.src, alt: b.alt });
       if (b.kind === 'list') return el('list', { style: b.style }, b.items.map((t) => el('item', {}, t)));
       const rows = b.rows.map((r) => r.map((cell) => {
         const lines = (cell.lines || []).map(norm).filter(Boolean);
@@ -361,12 +491,14 @@
     }));
     root.c.push(el('body', {}, secs.length ? secs.map(secNode) : [el('section', { id: uid('S-1'), title: 'Текст документа' })]));
     if (refs.length) root.c.push(el('references', {}, refs.map((r, i) => el('reference', { id: uid(`REF-${ncname(r.identifier, String(i + 1))}`), type: 'internal', origin: 'source' }, [el('identifier', {}, r.identifier), el('title', {}, r.title)]))));
-    const how = opts.kind === 'pdf' ? 'по текстовому слою PDF: таблицы и рисунки не восстанавливаются, нумерация распознана по началу строк' : 'по стилям и нумерации Word: рисунки не переносятся';
+    const how = opts.kind === 'pdf' ? 'по текстовому слою PDF: таблицы и рисунки не восстанавливаются, нумерация распознана по началу строк'
+      : opts.kind === 'vsdx' ? 'по схеме Visio: каждая страница — раздел с рисунком схемы, надписи дорожек и шагов внутри них собраны в таблицу «Участник — Действие», остальные надписи фигур — абзацами сверху вниз'
+        : `по стилям и нумерации Word${opts.kind === 'doc' ? ' (формат Word 97–2003)' : ''}: рисунки не переносятся`;
     root.c.push(el('editorialNotes', {}, [el('note', { id: uid('EN-AUTO'), type: 'interpretation' },
-      `Документ «${opts.fileName}» разобран автоматически ${how}. Атомарные требования выделены по модальным словам («должен», «следует», «необходимо», «не допускается» и др.): ${report.requirements} шт. Положения, изложенные описательно, без таких слов, не выделены — их нужно добавить вручную. Владельцы, критичность и критерии приёмки не заполнены.`)]));
+      `Документ «${opts.fileName}» разобран автоматически ${how}. Выделено атомарных требований: ${report.requirements}, из них ${report.explicit} — по модальным словам («должен», «следует», «необходимо», «не допускается» и др.), ${report.implicit} — по описательным формулировкам: действия ролей в настоящем времени («ФЗ утверждает ФМ»), страдательный залог («ФМ согласовывается»), перечни под заголовками требований и правил, таблицы ответственности. У таких требований модальность выведена — проверьте их. Владельцы, критичность и критерии приёмки не заполнены.`)]));
 
     if (!secs.length) report.warnings.push('Не найдено ни одного раздела или пункта.');
-    if (!report.requirements) report.warnings.push('Не найдено предложений с «должен», «следует», «не допускается» — требования не выделены.');
+    if (!report.requirements) report.warnings.push('Не найдено требований: ни модальных слов («должен», «следует», «не допускается»), ни описательных обязанностей.');
     report.tempNext = tempNo;
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${ser(root, 0)}\n`;
     return { xml, report };
@@ -610,6 +742,24 @@
     const meta = {};
     if (coreX) { const t = coreX.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'title')[0]; if (t && norm(t.textContent).length > 3) meta.coreTitle = norm(t.textContent); }
     return { blocks, meta };
+  }
+
+  /* ---------- Visio ---------- */
+  const b64utf8 = (s) => { const bytes = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); };
+  async function parseVisio(buf, fileStem) {
+    if (!window.JSZip) await loadScript(VENDOR.jszip);
+    await loadScript(VENDOR.visio);
+    const v = await window.ISM.visio.parse(buf);
+    const blocks = [];
+    const pages = v.pages.filter((p) => p.svg || p.texts.length || p.lanes.length); // пустые страницы пропускаем
+    if (!pages.length) throw new Error('В схеме Visio нет фигур.');
+    pages.forEach((p) => {
+      blocks.push({ type: 'p', text: p.name, heading: 1 });
+      if (p.svg) blocks.push({ type: 'figure', src: `data:image/svg+xml;base64,${b64utf8(p.svg)}`, alt: `Схема «${p.name}»` });
+      if (p.lanes.length) blocks.push({ type: 'table', rows: [[{ lines: ['Участник'] }, { lines: ['Действие'] }], ...p.lanes.map((l) => [{ lines: [l.name] }, { lines: l.steps }])] });
+      p.texts.forEach((x) => blocks.push({ type: 'p', text: x }));
+    });
+    return { blocks, meta: { title: v.meta.title || fileStem }, pages };
   }
 
   /* ---------- PDF ---------- */
@@ -869,8 +1019,33 @@
       const res = await parseXlsx(buf, o);
       return { kind: 'xlsx', ...res };
     }
-    if (ext === 'doc' || ext === 'xls') throw new Error(`Старый формат .${ext} не поддерживается: пересохраните файл как .${ext}x.`);
-    throw new Error('Поддерживаются .docx, .pdf, .xlsx и .xml ИСМ.');
+    if (ext === 'doc' || ext === 'dot') {
+      const head = new Uint8Array(buf.slice(0, 16));
+      const sig = String.fromCharCode(...head);
+      if (head[0] === 0x50 && head[1] === 0x4B) { // на самом деле .docx с расширением .doc
+        const { blocks, meta } = await parseDocx(buf);
+        sniffMeta(blocks, meta, fileStem);
+        return { kind: 'docx', ...buildIsm(blocks, meta, { ...o, kind: 'docx' }) };
+      }
+      if (sig.startsWith('{\\rtf')) throw new Error('Файл с расширением .doc на самом деле в формате RTF. Откройте его в Word и сохраните как .docx.');
+      if (/^\s*(<|MIME)/i.test(sig)) throw new Error('Файл с расширением .doc на самом деле веб-страница (HTML/MHT). Откройте его в Word и сохраните как .docx.');
+      await loadScript(VENDOR.doc);
+      const { blocks, meta } = window.ISM.doc.parse(buf);
+      sniffMeta(blocks, meta, fileStem);
+      const res = buildIsm(blocks, meta, { ...o, kind: 'doc' });
+      return { kind: 'doc', ...res };
+    }
+    if (ext === 'vsdx' || ext === 'vsdm') {
+      const { blocks, meta, pages } = await parseVisio(buf, fileStem);
+      sniffMeta(blocks, meta, fileStem);
+      const res = buildIsm(blocks, meta, { ...o, kind: 'vsdx' });
+      res.report.pages = pages.length;
+      res.report.lanes = pages.reduce((a, p) => a + p.lanes.length, 0);
+      return { kind: 'vsdx', ...res };
+    }
+    if (ext === 'vsd' || ext === 'vss' || ext === 'vst') throw new Error('Старый формат Visio .vsd в браузере не читается. Откройте схему в Visio и сохраните как «Документ Visio (*.vsdx)».');
+    if (ext === 'xls') throw new Error('Старый формат .xls не поддерживается: пересохраните файл как .xlsx.');
+    throw new Error('Поддерживаются Word (.docx, .doc), PDF, Excel-реестр (.xlsx), Visio (.vsdx) и XML ИСМ.');
   }
 
   window.ISM = window.ISM || {};

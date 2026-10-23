@@ -1021,3 +1021,30 @@ button.sd-row:hover { background: var(--accent-wash); }
   .sd-who, .sd-at, .sd-head span:nth-child(n+3) { display: none; }
 }
 .empty .link-btn { font-size: inherit; }
+
+/* ---------- Схемы Visio и просмотрщик рисунков ---------- */
+.src-doc { color: var(--src-docx); }
+.src-vsdx { color: #3955A3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .src-vsdx { color: #9DB2F0; } }
+:root[data-theme="dark"] .src-vsdx { color: #9DB2F0; }
+figure img { cursor: zoom-in; }
+figure.diagram img { max-height: 560px; width: auto; max-width: 100%; }
+figure.diagram figcaption { margin-top: 6px; font-size: 13px; color: var(--ink-3); }
+figure img:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+body.viewer-open { overflow: hidden; }
+.viewer { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; background: rgba(14, 24, 28, .86); }
+.viewer[hidden] { display: none; }
+.vw-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--sheet); border-bottom: 2px solid var(--frame); }
+.vw-title { flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-nav, .vw-zoom { display: inline-flex; align-items: center; gap: 6px; }
+.vw-zoom #vwPct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+.vw-close { font-size: 18px; line-height: 1; }
+.vw-stage { flex: 1; overflow: auto; display: flex; padding: 12px; cursor: grab; touch-action: none; }
+.vw-stage.grabbing { cursor: grabbing; }
+.vw-stage img { margin: auto; background: #fff; box-shadow: 0 4px 24px rgba(0, 0, 0, .35); user-select: none; max-width: none; max-height: none; }
+@media (max-width: 640px) {
+  .vw-bar { padding: 8px 10px; gap: 6px 10px; }
+  .vw-title { flex: 1 1 calc(100% - 60px); order: 1; }
+  .vw-close { order: 2; }
+  .vw-nav, .vw-zoom, .vw-bar > a { order: 3; }
+}

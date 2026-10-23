@@ -17,7 +17,7 @@
   };
   const JSZIP_URL = 'assets/vendor/jszip.min.js'; // JSZip 3.10.1, MIT; лежит в репозитории, внешних запросов нет
   const EXCELJS_URL = 'assets/vendor/exceljs.min.js'; // ExcelJS 4.4.0, MIT; загружается только при выгрузке в Excel
-  const ACCEPT = '.docx,.docm,.pdf,.xlsx,.xlsm,.xml';
+  const ACCEPT = '.docx,.docm,.doc,.pdf,.xlsx,.xlsm,.xml,.vsdx,.vsdm,.vsd';
 
   // Корпоративный реестр требований: столбцы A–R шаблона пилота V0.1
   const REG_HEAD = ['ID', 'Наименование', 'Объект требования', 'Атомарная формулировка', 'Источник / документ', 'Пункт / ссылка', 'Уровень',
@@ -113,8 +113,8 @@
       'system-component': 'Компоненты системы', object: 'Объекты требований',
     },
     roleType: { 'org-unit': 'подразделение', 'business-role': 'бизнес-роль', 'user-group': 'группа пользователей' },
-    src: { builtin: 'опубл.', docx: 'docx', pdf: 'pdf', xlsx: 'xlsx', xml: 'xml' },
-    srcLong: { builtin: 'опубликованный регламент', docx: 'Word', pdf: 'PDF', xlsx: 'Excel-реестр', xml: 'XML ИСМ' },
+    src: { builtin: 'опубл.', docx: 'docx', doc: 'doc', pdf: 'pdf', xlsx: 'xlsx', xml: 'xml', vsdx: 'vsdx' },
+    srcLong: { builtin: 'опубликованный регламент', docx: 'Word', doc: 'Word 97–2003', pdf: 'PDF', xlsx: 'Excel-реестр', xml: 'XML ИСМ', vsdx: 'Visio' },
     ovKind: { dup: 'почти совпадают', overlap: 'пересекаются', conflict: 'противоречат по модальности' },
     bpmn: {
       process: 'процесс', task: 'задача', userTask: 'пользовательская задача', serviceTask: 'сервисная задача',
@@ -692,7 +692,111 @@
     return h.trim();
   }
   function figure(f) {
-    return `<figure><img src="${esc(resolveSrc(f.getAttribute('src')))}" alt="${esc(f.getAttribute('alt'))}" loading="lazy" onerror="this.parentNode.classList.add('missing');this.replaceWith(document.createTextNode('[рисунок: ' + this.alt + ']'))"></figure>`;
+    const src = f.getAttribute('src') || '';
+    const diagram = /^data:image\/svg\+xml/.test(src);
+    return `<figure${diagram ? ' class="diagram"' : ''}><img src="${esc(resolveSrc(src))}" alt="${esc(f.getAttribute('alt'))}" loading="lazy" tabindex="0" title="Открыть в просмотрщике" onerror="this.parentNode.classList.add('missing');this.replaceWith(document.createTextNode('[рисунок: ' + this.alt + ']'))">${diagram ? `<figcaption>${esc(f.getAttribute('alt'))} · <button type="button" class="link-btn" data-figopen>открыть с масштабом</button></figcaption>` : ''}</figure>`;
+  }
+
+  /* ---------- Просмотр рисунков и схем: масштаб, перетаскивание, листание ---------- */
+  const V = { list: [], i: 0, zoom: 1, fit: true };
+  function openViewer(img) {
+    V.list = $$('#view figure img');
+    V.i = Math.max(0, V.list.indexOf(img));
+    V.fit = true;
+    let box = $('#viewer');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'viewer';
+      box.className = 'viewer';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      document.body.appendChild(box);
+      bindViewer(box);
+    }
+    box.hidden = false;
+    document.body.classList.add('viewer-open');
+    showViewer();
+  }
+  function showViewer() {
+    const box = $('#viewer');
+    const src = V.list[V.i];
+    if (!box || !src) return;
+    const name = src.alt || 'Рисунок';
+    const ext = /^data:image\/svg/.test(src.src) ? 'svg' : (src.src.match(/\.(png|jpe?g|gif|svg)(?:$|\?)/i) || [])[1] || 'png';
+    box.setAttribute('aria-label', name);
+    box.innerHTML = `<div class="vw-bar">
+        <b class="vw-title">${esc(name)}</b>
+        ${V.list.length > 1 ? `<span class="vw-nav"><button type="button" class="btn btn-sm" data-vnav="-1" aria-label="Предыдущий рисунок"${V.i ? '' : ' disabled'}>‹</button><span>${V.i + 1} из ${V.list.length}</span><button type="button" class="btn btn-sm" data-vnav="1" aria-label="Следующий рисунок"${V.i < V.list.length - 1 ? '' : ' disabled'}>›</button></span>` : ''}
+        <span class="vw-zoom"><button type="button" class="btn btn-sm" data-vz="out" aria-label="Уменьшить">−</button><span id="vwPct">100%</span><button type="button" class="btn btn-sm" data-vz="in" aria-label="Увеличить">+</button><button type="button" class="btn btn-sm" data-vz="fit">По размеру</button></span>
+        <a class="btn btn-sm" href="${esc(src.src)}" download="${esc(safeName(name))}.${ext}">${ICON.down}Скачать</a>
+        <button type="button" class="btn btn-sm vw-close" data-vclose aria-label="Закрыть">×</button>
+      </div>
+      <div class="vw-stage" id="vwStage"><img id="vwImg" src="${esc(src.src)}" alt="${esc(name)}" draggable="false"></div>`;
+    const img = $('#vwImg');
+    const apply = () => { if (V.fit) fitViewer(); else zoomViewer(V.zoom); };
+    if (img.complete) apply(); else img.onload = apply;
+    $('[data-vclose]').focus();
+  }
+  function fitViewer() {
+    const img = $('#vwImg'), st = $('#vwStage');
+    if (!img || !st || !img.naturalWidth) return;
+    V.fit = true;
+    zoomViewer(Math.min(1.5, (st.clientWidth - 24) / img.naturalWidth, (st.clientHeight - 24) / img.naturalHeight), true);
+  }
+  function zoomViewer(z, keepFit) {
+    const img = $('#vwImg'), st = $('#vwStage');
+    if (!img || !st) return;
+    const old = img.getBoundingClientRect();
+    const cx = old.width ? (st.scrollLeft + st.clientWidth / 2) / Math.max(1, st.scrollWidth) : 0.5;
+    const cy = old.height ? (st.scrollTop + st.clientHeight / 2) / Math.max(1, st.scrollHeight) : 0.5;
+    V.zoom = Math.max(0.1, Math.min(8, z));
+    if (!keepFit) V.fit = false;
+    img.style.width = `${Math.round(img.naturalWidth * V.zoom)}px`;
+    img.style.height = `${Math.round(img.naturalHeight * V.zoom)}px`;
+    st.scrollLeft = cx * st.scrollWidth - st.clientWidth / 2;
+    st.scrollTop = cy * st.scrollHeight - st.clientHeight / 2;
+    const pct = $('#vwPct'); if (pct) pct.textContent = `${Math.round(V.zoom * 100)}%`;
+  }
+  function closeViewer() {
+    const box = $('#viewer');
+    if (!box) return;
+    box.hidden = true;
+    document.body.classList.remove('viewer-open');
+    const back = V.list[V.i];
+    if (back && back.isConnected) back.focus();
+  }
+  function bindViewer(box) {
+    box.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button');
+      if (!b) { if (ev.target === box) closeViewer(); return; }
+      if (b.hasAttribute('data-vclose')) closeViewer();
+      else if (b.dataset.vnav) { V.i = Math.max(0, Math.min(V.list.length - 1, V.i + +b.dataset.vnav)); V.fit = true; showViewer(); }
+      else if (b.dataset.vz === 'in') zoomViewer(V.zoom * 1.25);
+      else if (b.dataset.vz === 'out') zoomViewer(V.zoom / 1.25);
+      else if (b.dataset.vz === 'fit') fitViewer();
+    });
+    let drag = null;
+    box.addEventListener('pointerdown', (ev) => {
+      const st = ev.target.closest('#vwStage');
+      if (!st || ev.button !== 0) return;
+      drag = { x: ev.clientX, y: ev.clientY, l: st.scrollLeft, t: st.scrollTop, st };
+      st.classList.add('grabbing');
+      st.setPointerCapture(ev.pointerId);
+    });
+    box.addEventListener('pointermove', (ev) => { if (!drag) return; drag.st.scrollLeft = drag.l - (ev.clientX - drag.x); drag.st.scrollTop = drag.t - (ev.clientY - drag.y); });
+    const end = () => { if (drag) { drag.st.classList.remove('grabbing'); drag = null; } };
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+    box.addEventListener('wheel', (ev) => { if (!ev.ctrlKey && !ev.metaKey) return; ev.preventDefault(); zoomViewer(V.zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
+    document.addEventListener('keydown', (ev) => {
+      if (box.hidden) return;
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeViewer(); }
+      else if (ev.key === '+' || ev.key === '=') zoomViewer(V.zoom * 1.25);
+      else if (ev.key === '-') zoomViewer(V.zoom / 1.25);
+      else if (ev.key === '0') fitViewer();
+      else if ((ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') && V.list.length > 1) { V.i = Math.max(0, Math.min(V.list.length - 1, V.i + (ev.key === 'ArrowRight' ? 1 : -1))); V.fit = true; showViewer(); }
+    }, true);
+    window.addEventListener('resize', () => { if (!box.hidden && V.fit) fitViewer(); });
   }
 
   /* ---------- Требование ---------- */
@@ -2070,8 +2174,8 @@
       <label class="drop big" id="upDrop">
         <span class="drop-ico">${ICON.up}</span>
         <b>Перетащите файлы сюда или выберите на компьютере</b>
-        <span class="drop-formats"><span>Word .docx</span><span>PDF</span><span>Excel-реестр .xlsx</span><span>XML ИСМ</span></span>
-        <span class="muted">Можно несколько файлов сразу. Старые .doc и .xls пересохраните в новом формате.</span>
+        <span class="drop-formats"><span>Word .docx и .doc</span><span>PDF</span><span>Visio .vsdx</span><span>Excel-реестр .xlsx</span><span>XML ИСМ</span></span>
+        <span class="muted">Можно несколько файлов сразу. Старые .xls и .vsd пересохраните в новом формате.</span>
         <input type="file" id="upFiles" multiple accept="${ACCEPT}">
       </label>
       <div class="up-opts">
@@ -2100,8 +2204,8 @@
     h += '</section>';
 
     h += `<section class="block how"><h2>Как это работает</h2><ol class="steps">
-      <li><b>Загрузка.</b> Word и PDF разбираются по нумерации пунктов и заголовкам, таблицы терминов и сводная информация попадают в метаданные. Excel-реестр читается по заголовкам столбцов шаблона V0.1, XML ИСМ открывается как есть.</li>
-      <li><b>Разметка.</b> Требование — предложение с модальным словом: «должен», «следует», «необходимо», «не допускается», «рекомендуется». Перечень после «должен включать:» даёт отдельное требование на каждый пункт перечня. Цитата сохраняется дословно.</li>
+      <li><b>Загрузка.</b> Word (.docx и старый .doc) и PDF разбираются по нумерации пунктов и заголовкам, таблицы терминов и сводная информация попадают в метаданные. Схема Visio .vsdx отрисовывается постранично, дорожки и шаги собираются в таблицу «Участник — Действие». Excel-реестр читается по заголовкам столбцов шаблона V0.1, XML ИСМ открывается как есть.</li>
+      <li><b>Разметка.</b> Требование — предложение с модальным словом («должен», «следует», «необходимо», «не допускается», «рекомендуется») или описательная обязанность: «ФЗ утверждает ФМ», «проект согласовывается с юристом», пункт перечня под заголовком «Требования к…», строка таблицы ответственности. У описательных модальность выведена — их стоит проверить. Цитата сохраняется дословно.</li>
       <li><b>Реестр.</b> Каждое требование получает карточку: рабочий номер TEMP, выбранный уровень, статус «Черновик», версию 0.1. Владельца, критичность и критерий приёмки назначьте в карточке, кнопка «Изменить».</li>
       <li><b>Пересечения.</b> Требования всех документов общего реестра сравниваются между собой. Почти совпадающие, пересекающиеся и противоречащие по модальности пары выводятся отдельно; ложные отметьте «не дубль».</li>
     </ol></section>`;
@@ -2211,7 +2315,10 @@
         await persist(e);
         const rs = W.cloud ? regMsg(e.included ? await W.regJobs.get(key) : null, e) : '';
         it.state = 'ok'; it.key = key;
-        it.msg = `${L.srcLong[res.kind]}: ${res.kind === 'xlsx' ? pl(m.reqs.length, 'карточка', 'карточки', 'карточек') : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.${rs ? ' ' + rs : ''}`;
+        const parts = res.kind === 'xlsx' ? pl(m.reqs.length, 'карточка', 'карточки', 'карточек')
+          : res.kind === 'vsdx' ? `${pl(res.report.pages || m.sections.length, 'страница', 'страницы', 'страниц')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}${res.report.lanes ? ` (дорожек: ${res.report.lanes})` : ''}`
+            : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`;
+        it.msg = `${L.srcLong[res.kind] || res.kind}: ${parts}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.${rs ? ' ' + rs : ''}`;
         it.reg = rs;
         added.push(e);
       } catch (err) {
@@ -2860,7 +2967,7 @@
       const dm = modelOf(e);
       h += `<a role="menuitem" class="dm-item${!isWs && e.key === S.key ? ' on' : ''}" href="#/open/${esc(e.key)}">${srcBadge(e)}<span><b>${esc(dm ? docName(dm) : e.name)}</b><span>${esc(dm ? docTitle(dm) : e.error)}${dm ? ` · ${pl(dm.reqs.length, 'требование', 'требования', 'требований')}` : ''}</span></span></a>`;
     });
-    h += `<hr><label class="menu-file dm-add" role="menuitem">${ICON.up}<span><b>Загрузить документы</b><span>Word, PDF, Excel-реестр или XML ИСМ</span></span><input type="file" class="up-input" multiple accept="${ACCEPT}"></label>
+    h += `<hr><label class="menu-file dm-add" role="menuitem">${ICON.up}<span><b>Загрузить документы</b><span>Word, PDF, Visio, Excel-реестр или XML ИСМ</span></span><input type="file" class="up-input" multiple accept="${ACCEPT}"></label>
       <a role="menuitem" class="dm-item" href="#/">${ICON.docs}<span><b>Все документы</b><span>список, загрузка, настройки общего реестра</span></span></a>
       <a role="menuitem" class="dm-item" href="#/common">${ICON.reg}<span><b>Общий реестр</b><span>${W.cloud ? `${W.reg.count == null ? 'в базе данных' : pl(W.reg.count, 'запись', 'записи', 'записей')}, один на всех` : `${pl(commonList().length, 'карточка', 'карточки', 'карточек')} из ${pl(includedModels().length, 'документа', 'документов', 'документов')}`}</span></span></a>`;
     $('#docMenuPanel').innerHTML = h;
@@ -3276,6 +3383,8 @@
       if (on('#resetF')) { S.f = freshF(); if (location.hash.includes('?')) location.hash = '#/req'; else rerender(); return; }
       if (on('#csvFiltered')) { download('xlsx-filtered'); return; }
       if ((x = on('[data-dl]'))) { closeMenus(); if (!x.disabled) download(x.dataset.dl); return; }
+      if ((x = on('#view figure img'))) { openViewer(x); return; }
+      if ((x = on('[data-figopen]'))) { const img = x.closest('figure').querySelector('img'); if (img) openViewer(img); return; }
       if ((x = on('[data-docxml]'))) { download('docxml', x.dataset.docxml); return; }
       if ((x = on('[data-rf]'))) {
         S.rf[x.dataset.rf] = x.dataset.v;
@@ -3520,6 +3629,8 @@
 
     document.addEventListener('keydown', (ev) => {
       if ($('#editor').open) return;
+      if ($('#viewer') && !$('#viewer').hidden) return; // клавиши просмотрщика обрабатывает он сам
+      if ((ev.key === 'Enter' || ev.key === ' ') && document.activeElement.matches && document.activeElement.matches('#view figure img')) { ev.preventDefault(); openViewer(document.activeElement); return; }
       const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
       if (ev.key === '/' && !inField) { ev.preventDefault(); $('#searchInput').focus(); return; }
       if (ev.key === 'Escape') {

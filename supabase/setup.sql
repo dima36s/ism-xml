@@ -104,7 +104,7 @@ create table if not exists public.documents (
   title       text not null default '',
   version     text,
   status      text,                                -- статус документа: draft, effective, superseded, withdrawn
-  source_kind text not null check (source_kind in ('builtin', 'docx', 'pdf', 'xlsx', 'xml')),
+  source_kind text not null check (source_kind in ('builtin', 'docx', 'doc', 'pdf', 'xlsx', 'xml', 'vsdx')),
   file_name   text,
   xml         text,                                -- XML ИСМ; пусто у неизменённого опубликованного регламента
   included    boolean not null default true,       -- входит в общий реестр
@@ -114,6 +114,11 @@ create table if not exists public.documents (
   updated_at  timestamptz not null default now(),
   unique (owner_id, client_key)
 );
+-- Новые виды исходных файлов (Word 97–2003, Visio) для баз, созданных прежней версией скрипта
+alter table public.documents drop constraint if exists documents_source_kind_check;
+alter table public.documents add constraint documents_source_kind_check
+  check (source_kind in ('builtin', 'docx', 'doc', 'pdf', 'xlsx', 'xml', 'vsdx'));
+
 comment on table public.documents is 'Документы пользователя; XML ИСМ — источник истины, остальные поля для поиска и отчётов';
 create index if not exists documents_owner_idx on public.documents (owner_id, added_at);
 create index if not exists documents_type_idx on public.documents (type_code);
