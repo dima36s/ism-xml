@@ -507,8 +507,53 @@
   }
   // При входе: документы, включённые в реестр, сверяются с ним (например, загруженные до появления общего реестра)
   async function reconcileRegistry() {
-    for (const e of W.docs.filter((d) => d.included)) await queueRegistry(e);
+    for (const e of W.docs.filter((d) => d.included && !d.regSync)) await queueRegistry(e); // уже сверенные в этом сеансе пропускаем
     if (parseHash().view === 'home') rerender();
+  }
+
+  /* ---------- Обновление разметки уже загруженных документов ---------- */
+  // Исходных файлов нет — правила выделения требований применяются к тексту пунктов, сохранённому в XML.
+  // Карточки и правки остаются, добавляются только требования, которых ещё нет. Документы, размеченные
+  // прежней версией правил, обновляются автоматически при входе; кнопка «Обновить разметку» проверяет все.
+  const REMARK_KINDS = new Set(['pdf', 'docx', 'doc', 'vsdx']);
+  async function remarkAll(force) {
+    if (W.remarking) return null;
+    const cv = window.ISM.convert;
+    const list = W.docs.filter((e) => REMARK_KINDS.has(e.kind) && e.xml && (force || cv.rulesVersion(e.xml) < cv.RULES));
+    if (!list.length) { if (force) toast('Новых требований не найдено: разметка всех документов актуальна', 5000); return null; }
+    const st = { done: 0, total: list.length, added: 0, docs: 0, failed: 0 };
+    W.remarking = st;
+    const today = ymd();
+    let seq = tempStart(today);
+    const show = () => { const b = $('#remarkBtn'); if (b) { b.disabled = true; b.lastChild.textContent = `Обновляю разметку: ${st.done} из ${st.total}`; } };
+    toast(`Обновляю разметку документов по новым правилам: ${pl(st.total, 'документ', 'документа', 'документов')}…`, 6000);
+    show();
+    for (const e of list) {
+      try {
+        const res = cv.remark(e.xml, { today, tempStart: seq });
+        seq = res.tempNext;
+        if (res.xml !== e.xml) {
+          e.xml = res.xml;
+          W.models.delete(e.key);
+          if (S.key === e.key) S.m = null;
+          await persist(e);
+        }
+        if (res.added) { st.added += res.added; st.docs++; }
+      } catch (err) { st.failed++; console.warn('Разметка не обновилась:', e.name, err); }
+      st.done++;
+      show();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    W.tempSeq = { [today]: seq };
+    saveMeta('tempSeq', W.tempSeq);
+    W.remarking = null;
+    if (S.key && entry(S.key)) S.m = modelOf(entry(S.key));
+    bump();
+    rerender();
+    toast(st.added
+      ? `Разметка обновлена: в ${pl(st.docs, 'документе', 'документах', 'документах')} добавлено ${pl(st.added, 'требование', 'требования', 'требований')}${W.cloud ? ', они попадают в общий реестр' : ''}.${st.failed ? ` Не обработано: ${st.failed}.` : ''}`
+      : `Разметка проверена: новых требований не найдено.${st.failed ? ` Не обработано: ${st.failed}.` : ''}`, 9000);
+    return st;
   }
   // Итог добавления документа в общий реестр — одной фразой
   function regMsg(res, e) {
@@ -2181,6 +2226,7 @@
       <div class="up-opts">
         <label class="f-group"><span class="f-label">Уровень требований</span><select id="upLevel">${Object.entries(L.level).map(([k, v]) => `<option value="${k}"${k === (S.upLevel || 'L2') ? ' selected' : ''}>${k} — ${esc(v)}</option>`).join('')}</select></label>
         <label class="f-group chk"><input type="checkbox" id="upInclude"${S.upInclude === false ? '' : ' checked'}> сразу включать в общий реестр</label>
+        <label class="f-group chk" title="Если файл с таким именем уже загружен, документ обновится новым разбором: появятся схемы и требования по новым правилам. Правки карточек этого документа заменятся."><input type="checkbox" id="upReplace"${S.upReplace === false ? '' : ' checked'}> обновлять документы с тем же именем файла</label>
       </div>
       <div id="upReport">${uploadReport()}</div>
     </section>`;
@@ -2189,7 +2235,7 @@
     }
 
     h += `<section class="block docs-block"><div class="block-head"><h2>В работе ${docs.length ? `<span class="count">${docs.length}</span>` : ''}</h2>
-      ${docs.length ? `<div class="head-actions"><a class="btn btn-sm" href="#/common">${ICON.reg}Общий реестр · ${nReq}</a><a class="btn btn-sm" href="#/overlaps">${ICON.ov}Пересечения · ${nOv}</a><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Всё одним архивом</button></div>` : ''}</div>`;
+      ${docs.length ? `<div class="head-actions"><a class="btn btn-sm" href="#/common">${ICON.reg}Общий реестр · ${nReq}</a><a class="btn btn-sm" href="#/overlaps">${ICON.ov}Пересечения · ${nOv}</a><button type="button" class="btn btn-sm" data-dl="all">${ICON.down}Всё одним архивом</button><button type="button" class="btn btn-sm" id="remarkBtn" title="Применить текущие правила выделения требований ко всем загруженным документам: добавятся требования, которых ещё нет; карточки и правки сохранятся"${W.remarking ? ' disabled' : ''}>${ICON.check || ''}<span>${W.remarking ? `Обновляю разметку: ${W.remarking.done} из ${W.remarking.total}` : 'Обновить разметку'}</span></button></div>` : ''}</div>`;
     if (!docs.length) {
       h += W.cloud
         ? `<div class="empty">Документов пока нет — загрузите файлы выше. Общий реестр требований всех пользователей — <a href="#/common">на вкладке «Общий реестр»</a>${W.reg.count ? ` (${pl(W.reg.count, 'запись', 'записи', 'записей')})` : ''}. Посмотреть, как выглядит размеченный документ, можно на примере: <button type="button" class="link-btn" id="addExample">открыть регламент C2.4.1.MTH.01</button>.</div>`
@@ -2204,7 +2250,7 @@
     h += '</section>';
 
     h += `<section class="block how"><h2>Как это работает</h2><ol class="steps">
-      <li><b>Загрузка.</b> Word (.docx и старый .doc) и PDF разбираются по нумерации пунктов и заголовкам, таблицы терминов и сводная информация попадают в метаданные. Схема Visio .vsdx отрисовывается постранично, дорожки и шаги собираются в таблицу «Участник — Действие». Excel-реестр читается по заголовкам столбцов шаблона V0.1, XML ИСМ открывается как есть.</li>
+      <li><b>Загрузка.</b> Word (.docx и старый .doc) и PDF разбираются по нумерации пунктов и заголовкам, таблицы терминов и сводная информация попадают в метаданные. Схемы и рисунки переносятся на своё место: картинки, метафайлы, встроенные схемы Visio, блок-схемы из фигур Word, области со схемами в PDF; их надписи и дорожки собираются в таблицу «Участник — Действие» и тоже дают требования. Схема Visio .vsdx отрисовывается постранично. Excel-реестр читается по заголовкам столбцов шаблона V0.1, XML ИСМ открывается как есть.</li>
       <li><b>Разметка.</b> Требование — предложение с модальным словом («должен», «следует», «необходимо», «не допускается», «рекомендуется») или описательная обязанность: «ФЗ утверждает ФМ», «проект согласовывается с юристом», пункт перечня под заголовком «Требования к…», строка таблицы ответственности. У описательных модальность выведена — их стоит проверить. Цитата сохраняется дословно.</li>
       <li><b>Реестр.</b> Каждое требование получает карточку: рабочий номер TEMP, выбранный уровень, статус «Черновик», версию 0.1. Владельца, критичность и критерий приёмки назначьте в карточке, кнопка «Изменить».</li>
       <li><b>Пересечения.</b> Требования всех документов общего реестра сравниваются между собой. Почти совпадающие, пересекающиеся и противоречащие по модальности пары выводятся отдельно; ложные отметьте «не дубль».</li>
@@ -2291,7 +2337,8 @@
     if (S.upload && S.upload.items.some((i) => i.state === 'work')) { toast('Дождитесь окончания текущей загрузки', 3000); return; }
     const level = ($('#upLevel') && $('#upLevel').value) || S.upLevel || 'L2';
     const include = $('#upInclude') ? $('#upInclude').checked : S.upInclude !== false;
-    S.upLevel = level; S.upInclude = include;
+    const replace = $('#upReplace') ? $('#upReplace').checked : S.upReplace !== false;
+    S.upLevel = level; S.upInclude = include; S.upReplace = replace;
     S.upload = { items: files.map((f) => ({ name: f.name, state: 'wait', msg: '' })) };
     if (parseHash().view !== 'home') location.hash = '#/';
     renderUploadReport();
@@ -2304,21 +2351,26 @@
       try {
         const res = await window.ISM.convert.fromFile(files[i], { level, tempStart: seq, today });
         if (res.report && res.report.tempNext) seq = res.report.tempNext;
-        const key = `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-        const e = { key, name: files[i].name, kind: res.kind, xml: res.xml, addedAt: Date.now(), included: include, report: res.report || {}, level };
+        // Файл с тем же именем уже загружен — обновляем этот документ, а не заводим копию
+        const prev = replace ? W.docs.find((d) => !d.builtin && d.name === files[i].name && !added.includes(d)) : null;
+        const key = prev ? prev.key : `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        const e = prev || { key, name: files[i].name, addedAt: Date.now(), included: include };
+        const backup = prev ? { xml: prev.xml, kind: prev.kind, report: prev.report, level: prev.level } : null;
+        Object.assign(e, { kind: res.kind, xml: res.xml, report: res.report || {}, level });
         W.models.delete(key);
         const m = modelOf(e);
-        if (!m) throw new Error(e.error);
-        const same = W.docs.map(modelOf).filter((x) => x && x.id && x.id === m.id && x.version === m.version);
+        if (!m) { if (backup) { Object.assign(e, backup); W.models.delete(key); } throw new Error(e.error); }
+        if (prev && S.key === key) S.m = m;
+        const same = W.docs.map(modelOf).filter((x) => x && x !== m && x.id && x.id === m.id && x.version === m.version);
         if (same.length) e.report.warnings = [...(e.report.warnings || []), `Документ ${m.id} версии ${m.version} уже есть в списке — его требования будут отмечены как почти совпадающие. Лишнюю копию исключите из общего реестра.`];
-        W.docs.push(e);
+        if (prev) e.report.replaced = true; else W.docs.push(e);
         await persist(e);
         const rs = W.cloud ? regMsg(e.included ? await W.regJobs.get(key) : null, e) : '';
         it.state = 'ok'; it.key = key;
         const parts = res.kind === 'xlsx' ? pl(m.reqs.length, 'карточка', 'карточки', 'карточек')
           : res.kind === 'vsdx' ? `${pl(res.report.pages || m.sections.length, 'страница', 'страницы', 'страниц')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}${res.report.lanes ? ` (дорожек: ${res.report.lanes})` : ''}`
-            : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}`;
-        it.msg = `${L.srcLong[res.kind] || res.kind}: ${parts}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.${rs ? ' ' + rs : ''}`;
+            : `${pl(m.sections.length, 'раздел', 'раздела', 'разделов')}, ${pl(m.reqs.length, 'требование', 'требования', 'требований')}${(res.kind === 'docx' || res.kind === 'doc') && res.report.figures ? `, схем и рисунков: ${res.report.figures}` : ''}`;
+        it.msg = `${prev ? 'Документ обновлён новым разбором файла. ' : ''}${L.srcLong[res.kind] || res.kind}: ${parts}${(e.report.warnings || []).length ? '. ' + e.report.warnings[0].replace(/\.$/, '') : ''}.${rs ? ' ' + rs : ''}`;
         it.reg = rs;
         added.push(e);
       } catch (err) {
@@ -2331,7 +2383,7 @@
     if (added.length === 1 && files.length === 1) {
       const m = modelOf(added[0]);
       const it0 = S.upload.items[0];
-      toast(`Документ добавлен: ${pl(m.reqs.length, 'требование', 'требования', 'требований')}.${it0 && it0.reg ? ' ' + it0.reg : ''}`, it0 && it0.reg ? 6000 : 3500);
+      toast(`${added[0].report.replaced ? 'Документ обновлён' : 'Документ добавлен'}: ${pl(m.reqs.length, 'требование', 'требования', 'требований')}.${it0 && it0.reg ? ' ' + it0.reg : ''}`, it0 && it0.reg ? 6000 : 3500);
       openDoc(added[0].key, '#/doc');
     } else if (parseHash().view === 'home') {
       render();
@@ -3454,6 +3506,7 @@
       if (on('#resetGF')) { S.gf = freshGF(); rerender(); return; }
       if (on('#regReload') || on('#regReload2')) { reloadShared(); if (on('#regReload2')) rerender(); return; }
       if (on('#addExample')) { addExample(); return; }
+      if (on('#remarkBtn')) { remarkAll(true); return; }
       if ((x = on('[data-rowner]'))) {
         S.rf.owner = S.rf.owner === x.dataset.rowner ? '' : x.dataset.rowner;
         $$('[data-rowner]').forEach((b) => { const o = b.dataset.rowner === S.rf.owner; b.classList.toggle('on', o); b.setAttribute('aria-pressed', String(o)); });
@@ -3550,6 +3603,7 @@
       if (t.id === 'relSel') { S.linkRel = t.value; rerender(); }
       if (t.id === 'upLevel') S.upLevel = t.value;
       if (t.id === 'upInclude') S.upInclude = t.checked;
+      if (t.id === 'upReplace') S.upReplace = t.checked;
       if (t.dataset.doctype) { setDocType(t.dataset.doctype, t.value); return; }
       if (t.dataset.include) {
         const e = entry(t.dataset.include);
@@ -3687,7 +3741,8 @@
         checkLocalDocs();
       }
       render();
-      if (W.cloud) { refreshRegCount(); reconcileRegistry(); }
+      if (W.cloud) refreshRegCount();
+      setTimeout(() => { remarkAll(false).catch(() => null).then(() => { if (W.cloud) reconcileRegistry(); }); }, 600);
     } catch (e) {
       $('#view').innerHTML = `<div class="empty"><p><b>Не удалось запустить приложение.</b> ${esc(e.message)}</p></div>`;
     }

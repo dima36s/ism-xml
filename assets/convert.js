@@ -10,13 +10,21 @@
   'use strict';
   const NS = 'urn:protech:ism:regulation:1.0';
   const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  // версия модулей приложения: меняется при выпуске, чтобы браузер не взял из кэша старый модуль вместе с новым convert.js
+  const BUILD = '20261023b';
   const VENDOR = {
     jszip: 'assets/vendor/jszip.min.js',
     exceljs: 'assets/vendor/exceljs.min.js',
     pdf: 'assets/vendor/pdf.min.js',
     pdfWorker: 'assets/vendor/pdf.worker.min.js',
-    doc: 'assets/doc.js',
-    visio: 'assets/visio.js',
+    doc: `assets/doc.js?v=${BUILD}`,
+    visio: `assets/visio.js?v=${BUILD}`,
+    pdffig: `assets/pdffig.js?v=${BUILD}`,
+    drawingml: `assets/drawingml.js?v=${BUILD}`,
+    docfig: `assets/docfig.js?v=${BUILD}`,
+    docxfig: `assets/docxfig.js?v=${BUILD}`,
+    emf: `assets/emf.js?v=${BUILD}`,
+    wmfjs: 'assets/vendor/wmfjs.min.js',
   };
 
   /* ---------- Утилиты ---------- */
@@ -142,6 +150,79 @@
       return [first, `${m[1].replace(/долж(?:ен|на|но|ны)$/iu, agree)}${m[2]} ${second}`];
     }
     return [s];
+  }
+
+  /* ---------- Требования одного пункта ---------- */
+  // Общий движок для разбора файла и для обновления разметки сохранённого XML.
+  // c: {text:[{kind:'p',text}|{kind:'list',items}|{kind:'table',rows}], subs:[{}], normCtx}; secTitle — заголовок ближайшего раздела.
+  // Возвращает кандидатов {statement, quote, modality, basis, source}; подпунктам выставляет normCtx.
+  function clauseCandidates(c, secTitle) {
+    const out = [];
+    const add = (statement, quote, modality, basis, source) => out.push({ statement, quote, modality, basis, source });
+    const sec = { title: secTitle || '' };
+    // Раздел с требованиями или правилами: там описательные формулировки и перечни — тоже требования
+    const lead0 = c.text[0] && c.text[0].kind === 'p' ? c.text[0].text : '';
+    const inNorm = !NO_IMPLICIT.test(sec.title || '') && (NORM_TITLE.test(sec.title || '') || NORM_TITLE.test(lead0) || !!c.normCtx);
+    const quiet = NO_IMPLICIT.test(sec.title || '');
+    c.subs.forEach((sc) => { sc.normCtx = inNorm || NORM_TITLE.test(lead0); });
+    const sentence = (s, src = 'authoritative') => {
+      const m = modalityOf(s);
+      if (m) { splitAlso(s).forEach((x, k) => add(finish(x), s, m, 'explicit', k ? 'derived' : src)); return true; }
+      if (quiet) return false;
+      const im = implicitOf(s, inNorm);
+      if (im) { add(finish(s), s, im, 'implicit', src); return true; }
+      return false;
+    };
+    // Подзаголовок внутри пункта: с заглавной буквы, коротко, без глагола-действия; или вводная фраза с двоеточием
+    const headingLike = (x) => /:\s*$/.test(x) || (/^[«"(]?[А-ЯЁA-Z0-9]/.test(x) && x.length <= 120 && !/[.!?;]$/.test(x) && !VERB_RX.test(x) && !modalityOf(x));
+    for (let i = 0; i < c.text.length; i++) {
+      const blk = c.text[i];
+      if (blk.kind === 'p') {
+        const next = c.text[i + 1];
+        const leadMod = modalityOf(blk.text);
+        const leadText = blk.text.replace(/:\s*$/, '');
+        if (next && next.kind === 'list' && headingLike(blk.text)) {
+          const compose = COMPOSE.test(leadText);
+          const normLead = inNorm || NORM_TITLE.test(leadText) || compose || !!leadMod;
+          next.items.forEach((it) => {
+            const item = it.replace(/[;.,:]\s*$/, '').trim();
+            if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
+            if (quiet || !normLead || DEFINITION.test(item)) return;
+            if (leadMod || compose) add(finish(`${leadText} ${lowerFirst(item)}`), item, leadMod || 'shall', leadMod ? 'explicit' : 'implicit', 'derived');
+            else if (nominalItem(item)) add(finish(`${leadText}: ${lowerFirst(item)}`), item, 'shall', 'implicit', 'derived');
+          });
+          i++;
+          continue;
+        }
+        if (headingLike(blk.text) && !modalityOf(blk.text) && !/:\s/.test(blk.text)) continue; // подзаголовок внутри пункта
+        let found = false;
+        sentences(blk.text).forEach((s) => { if (sentence(s)) found = true; });
+        // «Четкость и простота структуры: минимизация количества пересекающихся линий»
+        if (!found && inNorm && !quiet && /^[^:]{3,80}:\s/.test(blk.text) && nominalItem(blk.text)) add(finish(blk.text), blk.text, 'shall', 'implicit', 'authoritative');
+      } else if (blk.kind === 'list') {
+        blk.items.forEach((it) => {
+          const item = it.replace(/[;.,:]\s*$/, '').trim();
+          if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
+          if (inNorm && !quiet && !DEFINITION.test(item) && nominalItem(item)) add(finish(item), item, 'shall', 'implicit', 'authoritative');
+        });
+      } else if (blk.kind === 'table') {
+        const duty = quiet ? null : dutyTable(blk.rows);
+        if (duty) {
+          blk.rows.slice(1).forEach((r) => {
+            const who = cellText(r[duty.who]);
+            const when = duty.when >= 0 ? cellText(r[duty.when]) : '';
+            const lines = (r[duty.what] && r[duty.what].lines ? r[duty.what].lines : []).flatMap((ln) => ln.split(/;\s*/)).map(norm).map((x) => x.replace(/[;.,]\s*$/, '')).filter(Boolean);
+            lines.forEach((ln) => {
+              const m = modalityOf(ln);
+              add(finish(`${who ? who + ': ' : ''}${who ? lowerFirst(ln) : ln}${when ? ` (срок: ${when})` : ''}`), ln, m || 'shall', m ? 'explicit' : 'implicit', 'derived');
+            });
+          });
+        } else {
+          blk.rows.forEach((r) => r.forEach((cell) => (cell.lines || []).forEach((ln) => sentences(ln).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); }))));
+        }
+      }
+    }
+    return out;
   }
 
   /* ---------- Предложения ---------- */
@@ -370,68 +451,7 @@
         if (basis === 'explicit') report.explicit++; else report.implicit++;
         if (source === 'derived') report.derived++;
       };
-      // Раздел с требованиями или правилами: там описательные формулировки и перечни — тоже требования
-      const lead0 = c.text[0] && c.text[0].kind === 'p' ? c.text[0].text : '';
-      const inNorm = !NO_IMPLICIT.test(sec.title || '') && (NORM_TITLE.test(sec.title || '') || NORM_TITLE.test(lead0) || !!c.normCtx);
-      const quiet = NO_IMPLICIT.test(sec.title || '');
-      c.subs.forEach((sc) => { sc.normCtx = inNorm || NORM_TITLE.test(lead0); });
-      const sentence = (s, src = 'authoritative') => {
-        const m = modalityOf(s);
-        if (m) { splitAlso(s).forEach((x, k) => add(finish(x), s, m, 'explicit', k ? 'derived' : src)); return true; }
-        if (quiet) return false;
-        const im = implicitOf(s, inNorm);
-        if (im) { add(finish(s), s, im, 'implicit', src); return true; }
-        return false;
-      };
-      // Подзаголовок внутри пункта: с заглавной буквы, коротко, без глагола-действия; или вводная фраза с двоеточием
-      const headingLike = (x) => /:\s*$/.test(x) || (/^[«"(]?[А-ЯЁA-Z0-9]/.test(x) && x.length <= 120 && !/[.!?;]$/.test(x) && !VERB_RX.test(x) && !modalityOf(x));
-      for (let i = 0; i < c.text.length; i++) {
-        const blk = c.text[i];
-        if (blk.kind === 'p') {
-          const next = c.text[i + 1];
-          const leadMod = modalityOf(blk.text);
-          const leadText = blk.text.replace(/:\s*$/, '');
-          if (next && next.kind === 'list' && headingLike(blk.text)) {
-            const compose = COMPOSE.test(leadText);
-            const normLead = inNorm || NORM_TITLE.test(leadText) || compose || !!leadMod;
-            next.items.forEach((it) => {
-              const item = it.replace(/[;.,:]\s*$/, '').trim();
-              if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
-              if (quiet || !normLead || DEFINITION.test(item)) return;
-              if (leadMod || compose) add(finish(`${leadText} ${lowerFirst(item)}`), item, leadMod || 'shall', leadMod ? 'explicit' : 'implicit', 'derived');
-              else if (nominalItem(item)) add(finish(`${leadText}: ${lowerFirst(item)}`), item, 'shall', 'implicit', 'derived');
-            });
-            i++;
-            continue;
-          }
-          if (headingLike(blk.text) && !modalityOf(blk.text) && !/:\s/.test(blk.text)) continue; // подзаголовок внутри пункта
-          let found = false;
-          sentences(blk.text).forEach((s) => { if (sentence(s)) found = true; });
-          // «Четкость и простота структуры: минимизация количества пересекающихся линий»
-          if (!found && inNorm && !quiet && /^[^:]{3,80}:\s/.test(blk.text) && nominalItem(blk.text)) add(finish(blk.text), blk.text, 'shall', 'implicit', 'authoritative');
-        } else if (blk.kind === 'list') {
-          blk.items.forEach((it) => {
-            const item = it.replace(/[;.,:]\s*$/, '').trim();
-            if (sentences(it).map((s) => sentence(s)).some(Boolean)) return;
-            if (inNorm && !quiet && !DEFINITION.test(item) && nominalItem(item)) add(finish(item), item, 'shall', 'implicit', 'authoritative');
-          });
-        } else if (blk.kind === 'table') {
-          const duty = quiet ? null : dutyTable(blk.rows);
-          if (duty) {
-            blk.rows.slice(1).forEach((r) => {
-              const who = cellText(r[duty.who]);
-              const when = duty.when >= 0 ? cellText(r[duty.when]) : '';
-              const lines = (r[duty.what] && r[duty.what].lines ? r[duty.what].lines : []).flatMap((ln) => ln.split(/;\s*/)).map(norm).map((x) => x.replace(/[;.,]\s*$/, '')).filter(Boolean);
-              lines.forEach((ln) => {
-                const m = modalityOf(ln);
-                add(finish(`${who ? who + ': ' : ''}${who ? lowerFirst(ln) : ln}${when ? ` (срок: ${when})` : ''}`), ln, m || 'shall', m ? 'explicit' : 'implicit', 'derived');
-              });
-            });
-          } else {
-            blk.rows.forEach((r) => r.forEach((cell) => (cell.lines || []).forEach((ln) => sentences(ln).forEach((s) => { const m = modalityOf(s); if (m) add(finish(s), s, m, 'explicit', 'authoritative'); }))));
-          }
-        }
-      }
+      clauseCandidates(c, sec.title).forEach((x) => add(x.statement, x.quote, x.modality, x.basis, x.source));
       c.reqs = out;
       c.subs.forEach((sc) => { sc.parentNumber = c.number; reqsForClause(sc, sec); });
     }
@@ -491,11 +511,12 @@
     }));
     root.c.push(el('body', {}, secs.length ? secs.map(secNode) : [el('section', { id: uid('S-1'), title: 'Текст документа' })]));
     if (refs.length) root.c.push(el('references', {}, refs.map((r, i) => el('reference', { id: uid(`REF-${ncname(r.identifier, String(i + 1))}`), type: 'internal', origin: 'source' }, [el('identifier', {}, r.identifier), el('title', {}, r.title)]))));
-    const how = opts.kind === 'pdf' ? 'по текстовому слою PDF: таблицы и рисунки не восстанавливаются, нумерация распознана по началу строк'
+    const how = opts.kind === 'pdf' ? `по текстовому слою PDF: нумерация распознана по началу строк, таблицы не восстанавливаются${meta.figures ? `; схемы и рисунки (${meta.figures}) перенесены изображением, надписи схем — дорожки и шаги — собраны в таблицу «Участник — Действие» и список надписей` : ''}`
       : opts.kind === 'vsdx' ? 'по схеме Visio: каждая страница — раздел с рисунком схемы, надписи дорожек и шагов внутри них собраны в таблицу «Участник — Действие», остальные надписи фигур — абзацами сверху вниз'
-        : `по стилям и нумерации Word${opts.kind === 'doc' ? ' (формат Word 97–2003)' : ''}: рисунки не переносятся`;
+        : `по стилям и нумерации Word${opts.kind === 'doc' ? ' (формат Word 97–2003)' : ''}${meta.figureStats && (meta.figureStats.images + meta.figureStats.visio + meta.figureStats.visioPreview + meta.figureStats.shapes) ? `; рисунков и схем перенесено — ${meta.figureStats.images + meta.figureStats.visioPreview + meta.figureStats.shapes}, встроенных схем Visio отрисовано — ${meta.figureStats.visio}; надписи схем собраны в таблицу «Участник — Действие» и список надписей` : ''}`;
     root.c.push(el('editorialNotes', {}, [el('note', { id: uid('EN-AUTO'), type: 'interpretation' },
-      `Документ «${opts.fileName}» разобран автоматически ${how}. Выделено атомарных требований: ${report.requirements}, из них ${report.explicit} — по модальным словам («должен», «следует», «необходимо», «не допускается» и др.), ${report.implicit} — по описательным формулировкам: действия ролей в настоящем времени («ФЗ утверждает ФМ»), страдательный залог («ФМ согласовывается»), перечни под заголовками требований и правил, таблицы ответственности. У таких требований модальность выведена — проверьте их. Владельцы, критичность и критерии приёмки не заполнены.`)]));
+      `Документ «${opts.fileName}» разобран автоматически ${how}. Выделено атомарных требований: ${report.requirements}, из них ${report.explicit} — по модальным словам («должен», «следует», «необходимо», «не допускается» и др.), ${report.implicit} — по описательным формулировкам: действия ролей в настоящем времени («ФЗ утверждает ФМ»), страдательный залог («ФМ согласовывается»), перечни под заголовками требований и правил, таблицы ответственности. У таких требований модальность выведена — проверьте их. Владельцы, критичность и критерии приёмки не заполнены.`),
+      el('note', { id: uid(`EN-RULES-${RULES}`), type: 'interpretation' }, `Разметка выполнена правилами версии ${RULES}.`)]));
 
     if (!secs.length) report.warnings.push('Не найдено ни одного раздела или пункта.');
     if (!report.requirements) report.warnings.push('Не найдено требований: ни модальных слов («должен», «следует», «не допускается»), ни описательных обязанностей.');
@@ -587,6 +608,7 @@
   const wkids = (e, name) => (e ? Array.from(e.childNodes).filter((n) => n.nodeType === 1 && n.localName === name && n.namespaceURI === W) : []);
   const wkid = (e, name) => wkids(e, name)[0] || null;
   const wval = (e) => (e ? e.getAttributeNS(W, 'val') || e.getAttribute('w:val') : null);
+  const spacingOf = (sp) => { if (!sp) return {}; const g = (k) => { const v = sp.getAttributeNS(W, k) || sp.getAttribute(`w:${k}`); return v === null || v === '' ? null : v; }; const o = {}; if (g('before') !== null) o.before = +g('before'); if (g('after') !== null) o.after = +g('after'); if (g('line') !== null) o.line = +g('line'); if (g('lineRule') !== null) o.lineRule = g('lineRule'); return o; };
   const ROMAN = (n) => { const m = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']]; let s = ''; m.forEach(([v, r]) => { while (n >= v) { s += r; n -= v; } }); return s; };
   const RUS = 'абвгдежзиклмнопрстуфхцчшщэюя';
   function fmtNum(n, fmt) {
@@ -611,6 +633,18 @@
     const doc = await read('word/document.xml');
     if (!doc) throw new Error('В архиве нет word/document.xml — это не документ Word .docx.');
     const stylesX = await read('word/styles.xml');
+    // Рисунки и схемы: связи документа (rId → файл в архиве) и модуль docxfig.js
+    const relsX = await read('word/_rels/document.xml.rels');
+    const rels = {};
+    if (relsX) Array.from(relsX.getElementsByTagName('Relationship')).forEach((r) => {
+      if (r.getAttribute('TargetMode') === 'External') return;
+      const tg = r.getAttribute('Target') || '';
+      const parts = (tg.startsWith('/') ? tg.slice(1) : `word/${tg}`).split('/');
+      const outp = []; parts.forEach((x) => { if (x === '..') outp.pop(); else if (x && x !== '.') outp.push(x); });
+      rels[r.getAttribute('Id')] = outp.join('/');
+    });
+    let DF = null;
+    try { await loadScript(VENDOR.pdffig); await loadScript(VENDOR.docxfig); DF = window.ISM.docxFigures; } catch { DF = null; }
     const numX = await read('word/numbering.xml');
     const coreX = await read('docProps/core.xml');
 
@@ -622,9 +656,21 @@
         name: wval(wkid(s, 'name')) || id, basedOn: wval(wkid(s, 'basedOn')),
         numId: np ? wval(wkid(np, 'numId')) : null, ilvl: np && wkid(np, 'ilvl') ? +wval(wkid(np, 'ilvl')) : null,
         outline: wkid(pPr, 'outlineLvl') ? +wval(wkid(pPr, 'outlineLvl')) : null,
+        ...spacingOf(wkid(pPr, 'spacing')), sz: (() => { const z = wkid(wkid(s, 'rPr'), 'sz'); return z ? +wval(z) || null : null; })(),
+        isDefault: (s.getAttributeNS(W, 'type') || s.getAttribute('w:type')) === 'paragraph' && /^(1|true)$/.test(s.getAttributeNS(W, 'default') || s.getAttribute('w:default') || ''),
       };
     });
     const styleProp = (id, prop, guard = 0) => { const s = styles[id]; if (!s || guard > 12) return null; if (s[prop] !== null && s[prop] !== undefined) return s[prop]; return s.basedOn ? styleProp(s.basedOn, prop, guard + 1) : null; };
+    // интервалы абзаца и кегль (для оценки положения плавающих фигур): явные → стиль → стиль по умолчанию → docDefaults
+    const defStyle = Object.keys(styles).find((k) => styles[k].isDefault) || null;
+    const dd = stylesX ? stylesX.getElementsByTagNameNS(W, 'docDefaults')[0] : null;
+    const ddP = dd ? spacingOf(wkid(wkid(wkid(dd, 'pPrDefault'), 'pPr'), 'spacing')) : {};
+    const ddSz = (() => { const z = dd && wkid(wkid(wkid(dd, 'rPrDefault'), 'rPr'), 'sz'); return z ? +wval(z) || 22 : 22; })();
+    const spacingFor = (pPr, sid) => {
+      const ex = spacingOf(wkid(pPr, 'spacing'));
+      const pick = (k, d) => ex[k] ?? styleProp(sid, k) ?? (defStyle ? styleProp(defStyle, k) : null) ?? ddP[k] ?? d;
+      return { before: pick('before', 0), after: pick('after', 0), line: pick('line', 240), lineRule: pick('lineRule', 'auto'), size: (styleProp(sid, 'sz') ?? (defStyle ? styleProp(defStyle, 'sz') : null) ?? ddSz) / 2 };
+    };
 
     const abstracts = {}; const nums = {};
     if (numX) {
@@ -684,13 +730,19 @@
 
     const blocks = [];
     let inToc = false;
+    // оценка положения абзацев по вертикали — чтобы собрать плавающие фигуры одной схемы в один рисунок
+    const page = DF ? DF.pageOf(doc) : null;
+    let estY = 0;
     function para(p) {
       const pPr = wkid(p, 'pPr');
       const sid = wval(wkid(pPr, 'pStyle'));
       const sname = (styleProp(sid, 'name') || sid || '').toString();
-      if (/^toc|оглавлен|table of contents/i.test(sname)) return;
+      const pics = DF ? DF.findPics(p) : [];
       const text = pText(p);
-      if (!text) return;
+      let py = estY;
+      if (DF) { const a = DF.advance(estY, p, text, page, spacingFor(pPr, sid)); py = a.py; estY = a.next; }
+      if (/^toc|оглавлен|table of contents/i.test(sname)) return;
+      if (!text) { pics.forEach((pc) => blocks.push({ type: 'pending', pic: pc, py })); return; }
       if (/^(оглавление|содержание)$/i.test(text)) { inToc = true; return; }
       if (inToc && /\s\d+$/.test(text) && text.length < 140) return;
       inToc = false;
@@ -714,6 +766,7 @@
         if (m && plausibleLabel(m[1])) { b.label = m[1]; b.labelKind = 'num'; b.text = m[2]; }
       }
       blocks.push(b);
+      pics.forEach((pc) => blocks.push({ type: 'pending', pic: pc, py }));
     }
     function table(tbl) {
       const rows = wkids(tbl, 'tr').map((tr) => wkids(tr, 'tc').map((tc) => {
@@ -724,6 +777,9 @@
       }));
       const nonEmpty = rows.filter((r) => r.some((c) => c.lines.length));
       if (nonEmpty.length) blocks.push({ type: 'table', rows: nonEmpty });
+      // рисунки в ячейках — сразу после таблицы
+      const py = estY;
+      if (DF) { estY = DF.advanceTable(estY, rows, page); Array.from(tbl.getElementsByTagNameNS(W, 'p')).filter((p) => !p.parentNode || p.parentNode.localName !== 'txbxContent').forEach((p) => DF.findPics(p).forEach((pc) => blocks.push({ type: 'pending', pic: pc, py }))); }
     }
     const bodyEl = doc.getElementsByTagNameNS(W, 'body')[0];
     const walkBody = (n) => {
@@ -739,9 +795,114 @@
       }
     };
     walkBody(bodyEl);
-    const meta = {};
+    const ctx = { zip, rels, doc, page, loadScript, VENDOR, count: 0, stats: { images: 0, visio: 0, visioPreview: 0, shapes: 0, skipped: 0 } };
+    if (blocks.some((b) => b.type === 'pending')) {
+      try { await loadScript(VENDOR.drawingml); } catch { /* без отрисовки фигур остаются их надписи */ }
+      const resolved = await DF.resolveAll(blocks, ctx);
+      blocks.length = 0;
+      blocks.push(...resolved);
+    }
+    const meta = { figureStats: ctx.stats };
     if (coreX) { const t = coreX.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'title')[0]; if (t && norm(t.textContent).length > 3) meta.coreTitle = norm(t.textContent); }
     return { blocks, meta };
+  }
+
+  /* ---------- Обновление разметки сохранённого документа ---------- */
+  // Версия правил выделения требований: документы, размеченные прежней версией, дополняются при входе.
+  const RULES = 2;
+  const rulesVersion = (xml) => { const m = String(xml || '').match(/id="EN-RULES-(\d+)"/); return m ? +m[1] : 1; };
+  // Добавляет в XML требования, которые находят текущие правила, но которых ещё нет в пунктах.
+  // Существующие требования, карточки и правки не меняются. Возвращает {xml, added, tempNext}.
+  function remark(xml, opts = {}) {
+    const dom = new DOMParser().parseFromString(xml, 'application/xml');
+    if (dom.getElementsByTagName('parsererror')[0]) throw new Error('XML документа повреждён');
+    const root = dom.documentElement;
+    if (root.localName !== 'ismDocument' || root.namespaceURI !== NS) throw new Error('Это не документ ИСМ');
+    const ks = (e, name) => Array.from(e.children).filter((x) => x.localName === name && x.namespaceURI === NS);
+    const k1 = (e, name) => ks(e, name)[0] || null;
+    const mk = (name, attrs = {}, text) => {
+      const e = dom.createElementNS(NS, name);
+      Object.entries(attrs).forEach(([a, v]) => { if (v !== undefined && v !== null && v !== '') e.setAttribute(a, v); });
+      if (text != null) e.textContent = text;
+      return e;
+    };
+    const ids = new Set(Array.from(dom.getElementsByTagName('*')).map((e) => e.getAttribute('id')).filter(Boolean));
+    const uid = (base) => { let x = base, i = 2; while (ids.has(x)) x = `${base}-${i++}`; ids.add(x); return x; };
+    const code = ncname(root.getAttribute('id') || 'DOC', 'DOC').toUpperCase().replace(/^N(?=\d)/, 'D');
+    const reg0 = dom.getElementsByTagNameNS(NS, 'registry')[0];
+    const level = (reg0 && reg0.getAttribute('level')) || opts.level || 'L2';
+    const today = opts.today || '';
+    const dateRu = new Date().toLocaleDateString('ru-RU');
+    let tempNo = opts.tempStart || 1;
+    let added = 0;
+    const key = (s) => norm(s).toLowerCase().replace(/ё/g, 'е').replace(/[^0-9a-zа-я]+/g, ' ').trim();
+    const blocksOf = (cl) => {
+      const tx = k1(cl, 'text');
+      if (!tx) return [];
+      return Array.from(tx.children).map((b) => {
+        if (b.localName === 'p') return { kind: 'p', text: norm(b.textContent) };
+        if (b.localName === 'list') return { kind: 'list', items: ks(b, 'item').map((i) => norm(i.textContent)).filter(Boolean) };
+        if (b.localName === 'table') {
+          const rows = [...ks(b, 'head'), ...ks(b, 'row')].map((r) => ks(r, 'cell').map((c) => { const ps = ks(c, 'p'); return { lines: (ps.length ? ps.map((x) => norm(x.textContent)) : [norm(c.textContent)]).filter(Boolean) }; }));
+          return rows.length ? { kind: 'table', rows } : null;
+        }
+        return null;
+      }).filter((x) => x && (x.kind !== 'p' || x.text) && (x.kind !== 'list' || x.items.length));
+    };
+    function clause(cl, secTitle, secNumber, parentNumber, normCtx) {
+      const number = cl.getAttribute('number') || '';
+      const label = cl.getAttribute('label') || '';
+      const subsEl = ks(cl, 'clause');
+      const c = { number, label, parentNumber, text: blocksOf(cl), subs: subsEl.map(() => ({})), normCtx };
+      const cands = clauseCandidates(c, secTitle);
+      const have = ks(cl, 'requirement').map((r) => [key((k1(r, 'quote') || {}).textContent || ''), key((k1(r, 'statement') || {}).textContent || '')]);
+      const dup = (x) => {
+        const q = key(x.quote), s = key(x.statement);
+        return have.some(([hq, hs]) => (q && hq && (hq === q || hq.includes(q) || q.includes(hq))) || (s && hs && (hs === s || hs.includes(s) || s.includes(hs))));
+      };
+      let nn = have.length;
+      const before = subsEl[0] || null;
+      cands.forEach((x) => {
+        if (dup(x)) return;
+        have.push([key(x.quote), key(x.statement)]);
+        nn++;
+        const cite = number || (label ? `${parentNumber || ''} ${label}`.trim() : secNumber || '');
+        const r = mk('requirement', {
+          id: uid(`REQ-${code}-${ncname(number || (parentNumber ? parentNumber + label : '') || (cl.getAttribute('id') || '').replace(/^CL-/, ''), 'p')}-${String(nn).padStart(2, '0')}`),
+          number: cite, modality: x.modality, modalityBasis: x.basis, category: categoryOf(x.statement), categoryStatus: 'preliminary', source: x.source,
+        });
+        r.appendChild(mk('title', {}, autoTitle(x.statement)));
+        r.appendChild(mk('statement', {}, x.statement));
+        r.appendChild(mk('quote', {}, x.quote));
+        const reg = mk('registry', { id: `TEMP-${today}-${String(tempNo++).padStart(3, '0')}`, level, status: 'draft', version: '0.1' });
+        reg.appendChild(mk('remark', {}, `Карточка добавлена при обновлении разметки ${dateRu}: наименование предложено по тексту; владелец, критичность и критерий приёмки не заполнены.`));
+        r.appendChild(reg);
+        cl.insertBefore(r, before);
+        added++;
+      });
+      if (cl.getAttribute('type') === 'informative' && ks(cl, 'requirement').length) cl.setAttribute('type', 'normative');
+      subsEl.forEach((sc, i) => clause(sc, secTitle, secNumber, number, c.subs[i].normCtx));
+    }
+    function section(s) {
+      const title = s.getAttribute('title') || '';
+      const number = s.getAttribute('number') || '';
+      Array.from(s.children).forEach((ch) => {
+        if (ch.namespaceURI !== NS) return;
+        if (ch.localName === 'section') section(ch);
+        else if (ch.localName === 'clause') clause(ch, title, number, '', false);
+      });
+    }
+    const body = k1(root, 'body');
+    if (body) ks(body, 'section').forEach(section);
+    // Метка версии правил: документ больше не дополняется при входе
+    let notes = k1(root, 'editorialNotes');
+    if (!notes) { notes = mk('editorialNotes'); root.appendChild(notes); }
+    ks(notes, 'note').filter((n) => /^EN-RULES-/.test(n.getAttribute('id') || '')).forEach((n) => { ids.delete(n.getAttribute('id')); n.remove(); });
+    notes.appendChild(mk('note', { id: uid(`EN-RULES-${RULES}`), type: 'interpretation' },
+      `Разметка проверена правилами версии ${RULES} (${dateRu}): ${added ? `добавлено требований — ${added}` : 'новых требований не найдено'}. Правила выделяют требования по модальным словам и по описательным обязанностям: действия ролей в настоящем времени, страдательный залог, перечни под заголовками требований и правил, таблицы ответственности. Модальность таких требований выведена — проверьте их.`));
+    let out = new XMLSerializer().serializeToString(dom);
+    if (!/^<\?xml/.test(out)) out = `<?xml version="1.0" encoding="UTF-8"?>\n${out}`;
+    return { xml: out, added, tempNext: tempNo };
   }
 
   /* ---------- Visio ---------- */
@@ -768,12 +929,38 @@
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = VENDOR.pdfWorker;
     let pdf;
     try { pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise; } catch (e) { throw new Error('PDF не открывается: ' + e.message); }
+    let figs = null;
+    try { await loadScript(VENDOR.pdffig); figs = window.ISM.pdfFigures; } catch { figs = null; }
     const pages = [];
+    const regionsAll = [];
+    // первый проход: графика всех страниц — чтобы отбросить логотипы и штампы, повторяющиеся на страницах
+    const pageEls = [];
+    let skip = null;
+    if (figs) {
+      try {
+        for (let i = 1; i <= pdf.numPages; i++) pageEls.push(await figs.pageElements(await pdf.getPage(i), window.pdfjsLib));
+        skip = figs.repeatedImages(pageEls);
+      } catch (err) { figs = null; console.warn('Графика PDF не прочитана:', err); }
+    }
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const vp = page.getViewport({ scale: 1 });
       const tc = await page.getTextContent();
-      const items = tc.items.filter((it) => it.str !== undefined).map((it) => ({ s: it.str, x: it.transform[4], y: it.transform[5], h: Math.abs(it.transform[3]) || it.height || 10, w: it.width, eol: it.hasEOL }));
+      const raw = tc.items.filter((it) => it.str !== undefined).map((it) => ({ s: it.str, t: it.transform, w: it.width, h: it.height }));
+      // Схемы и рисунки: область — картинкой, её надписи — отдельно (дорожки, шаги, подписи)
+      let regs = [];
+      if (figs) {
+        try {
+          regs = figs.analyze(page, pageEls[i - 1] || [], raw, skip);
+          regs.forEach((r) => { r.sig = r.img && !r.lanes.length && !r.labels.length ? [r.x0, r.y0, r.x1, r.y1].map((v) => Math.round(v / 4)).join(',') : ''; });
+          for (const r of regs) {
+            const img = await figs.renderRegion(page, r);
+            regionsAll.push({ page: i, y: r.y1, x: r.x0, region: true, src: img.src, lanes: r.lanes, labels: r.labels, H: vp.height, sig: r.sig });
+          }
+        } catch (err) { regs = []; console.warn('Схемы на странице не разобраны:', err); }
+      }
+      const inReg = (it) => regs.some((r) => it.t[4] >= r.x0 - 2 && it.t[4] <= r.x1 + 2 && it.t[5] >= r.y0 - 2 && it.t[5] <= r.y1 + 2);
+      const items = raw.filter((it) => !inReg(it)).map((it) => ({ s: it.s, x: it.t[4], y: it.t[5], h: Math.abs(it.t[3]) || it.h || 10, w: it.w }));
       items.sort((a, b) => (Math.abs(b.y - a.y) > 2 ? b.y - a.y : a.x - b.x));
       const lines = [];
       items.forEach((it) => {
@@ -791,14 +978,20 @@
       pages.push(lines.filter((l) => l.text));
     }
     const all = pages.flat();
-    if (!all.length) throw new Error('В PDF нет текстового слоя (похоже на скан). Распознавание сканов не поддерживается — загрузите .docx или PDF с текстом.');
+    if (!all.length && !regionsAll.length) throw new Error('В PDF нет текстового слоя (похоже на скан). Распознавание сканов не поддерживается — загрузите .docx или PDF с текстом.');
     // колонтитулы: строки у краёв страницы, повторяющиеся на половине страниц и чаще
     const sig = (t) => t.replace(/\d+/g, '#');
     const cnt = new Map();
     all.forEach((l) => { if (l.y > l.H * 0.9 || l.y < l.H * 0.1) { const k = sig(l.text); cnt.set(k, (cnt.get(k) || 0) + 1); } });
     const minRep = Math.max(2, Math.ceil(pages.length * 0.5));
     const isFurniture = (l) => ((l.y > l.H * 0.9 || l.y < l.H * 0.1) && (cnt.get(sig(l.text)) || 0) >= minRep) || /^\s*\d+\s*(\|\s*\d+)?\s*$/.test(l.text) || /^стр(аница)?\.?\s*\d+/i.test(l.text) || /\.{4,}\s*\d+\s*$/.test(l.text);
-    const lines = all.filter((l) => !isFurniture(l));
+    // логотип или штамп, повторяющийся на многих страницах в одном месте, — не рисунок документа
+    const sigCount = new Map();
+    regionsAll.forEach((r) => { if (r.sig) sigCount.set(r.sig, (sigCount.get(r.sig) || 0) + 1); });
+    for (let k = regionsAll.length - 1; k >= 0; k--) { const r = regionsAll[k]; if (r.sig && sigCount.get(r.sig) >= Math.max(3, pages.length * 0.5)) regionsAll.splice(k, 1); }
+    const schemeOnly = regionsAll.length > 0 && all.filter((l) => !isFurniture(l)).length < 4; // файл — сама схема
+    const lines = all.filter((l) => !isFurniture(l)).concat(regionsAll)
+      .sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
 
     const blocks = [];
     let cur = null;
@@ -808,8 +1001,18 @@
     const APP = /^(Приложение\s+[\dА-ЯЁA-Z]+)\.?\s*(.*)$/i;
     let prev = null;
     const shortHead = (b) => b && ((b.labelKind === 'num' && depthOf(b.label) <= 2) || b.heading) && b.text.length < 110 && !/[.;:,]$/.test(b.text);
+    const pagesWithRegions = [...new Set(regionsAll.map((r) => r.page))];
+    let shownPage = 0;
     lines.forEach((l) => {
       let m;
+      if (l.region) {
+        if (schemeOnly && shownPage !== l.page) { shownPage = l.page; blocks.push({ type: 'p', text: pagesWithRegions.length > 1 ? `Схема, страница ${l.page}` : 'Схема', heading: 1 }); }
+        blocks.push({ type: 'figure', src: l.src, alt: `Схема на странице ${l.page}` });
+        if (l.lanes.length) blocks.push({ type: 'table', rows: [[{ lines: ['Участник'] }, { lines: ['Действие'] }], ...l.lanes.map((x) => [{ lines: [x.name] }, { lines: x.steps }])] });
+        if (l.labels.length) { blocks.push({ type: 'p', text: 'Надписи на схеме:' }); l.labels.forEach((x) => blocks.push({ type: 'p', text: x, bullet: true })); }
+        cur = null; prev = null;
+        return;
+      }
       const gap = prev && prev.page === l.page ? prev.y - l.y : 0;
       const fontJump = prev && Math.abs(l.h - prev.h) > Math.max(1.2, prev.h * 0.12);
       const bigGap = (prev && prev.page === l.page && gap > Math.max(l.h, prev.h) * 1.9) || fontJump || (shortHead(cur) && /^[«"(]?[А-ЯЁA-Z]/.test(l.text));
@@ -826,9 +1029,9 @@
       if (cur && cur.h == null) { cur.h = l.h; cur.page = l.page; }
       prev = l;
     });
-    blocks.forEach((b) => { b.text = norm(b.text); });
-    const hs = lines.map((l) => l.h).filter(Boolean).sort((a, b) => a - b);
-    const meta = { bodySize: hs.length ? hs[Math.floor(hs.length / 2)] : 0 };
+    blocks.forEach((b) => { if (b.type === 'p') b.text = norm(b.text); });
+    const hs = lines.filter((l) => !l.region).map((l) => l.h).filter(Boolean).sort((a, b) => a - b);
+    const meta = { bodySize: hs.length ? hs[Math.floor(hs.length / 2)] : 0, figures: regionsAll.length, schemeOnly };
     try { const info = await pdf.getMetadata(); const t = info && info.info && info.info.Title; if (t && norm(t).length > 3) meta.coreTitle = norm(t); } catch (e) { /* без метаданных */ }
     return { blocks, meta };
   }
@@ -1006,13 +1209,18 @@
       const { blocks, meta } = await parseDocx(buf);
       sniffMeta(blocks, meta, fileStem);
       const res = buildIsm(blocks, meta, { ...o, kind: 'docx' });
+      const fs = meta.figureStats || {};
+      res.report.figures = (fs.images || 0) + (fs.visio || 0) + (fs.visioPreview || 0) + (fs.shapes || 0);
+      if (fs.skipped) res.report.warnings.push(`Не перенесено рисунков: ${fs.skipped} (формат, который браузер не показывает, например TIFF).`);
       return { kind: 'docx', ...res };
     }
     if (ext === 'pdf') {
       const { blocks, meta } = await parsePdf(buf);
       sniffMeta(blocks, meta, fileStem);
+      if (meta.schemeOnly && !meta.title) meta.title = meta.coreTitle || fileStem;
       const res = buildIsm(blocks, meta, { ...o, kind: 'pdf' });
-      res.report.warnings.unshift('PDF: таблицы и рисунки не восстанавливаются; проверьте границы пунктов.');
+      res.report.figures = meta.figures || 0;
+      res.report.warnings.unshift(meta.figures ? `PDF: перенесено схем и рисунков — ${meta.figures}; таблицы восстанавливаются только на схемах (дорожки), проверьте границы пунктов.` : 'PDF: таблицы не восстанавливаются; проверьте границы пунктов.');
       return { kind: 'pdf', ...res };
     }
     if (ext === 'xlsx' || ext === 'xlsm') {
@@ -1030,9 +1238,23 @@
       if (sig.startsWith('{\\rtf')) throw new Error('Файл с расширением .doc на самом деле в формате RTF. Откройте его в Word и сохраните как .docx.');
       if (/^\s*(<|MIME)/i.test(sig)) throw new Error('Файл с расширением .doc на самом деле веб-страница (HTML/MHT). Откройте его в Word и сохраните как .docx.');
       await loadScript(VENDOR.doc);
-      const { blocks, meta } = window.ISM.doc.parse(buf);
+      const parsed = window.ISM.doc.parse(buf);
+      let { blocks } = parsed;
+      const { meta, art } = parsed;
+      // рисунки и схемы OfficeArt (docfig.js); без него — только текст
+      const ctx = { loadScript, VENDOR, stats: { images: 0, visio: 0, visioPreview: 0, shapes: 0, skipped: 0 } };
+      if (art) {
+        try {
+          for (const k of ['pdffig', 'docxfig', 'drawingml', 'docfig']) await loadScript(VENDOR[k]);
+          blocks = await window.ISM.docFigures.resolveAll(blocks, art, ctx);
+        } catch (e) { console.warn('Рисунки .doc не перенесены:', e); blocks = blocks.filter((b) => b.type !== 'pending'); }
+      }
+      meta.figureStats = ctx.stats;
       sniffMeta(blocks, meta, fileStem);
       const res = buildIsm(blocks, meta, { ...o, kind: 'doc' });
+      const fs = ctx.stats;
+      res.report.figures = fs.images + fs.visio + fs.visioPreview + fs.shapes;
+      if (fs.skipped) res.report.warnings.push(`Не перенесено рисунков: ${fs.skipped} (формат, который браузер не показывает, например PICT или TIFF).`);
       return { kind: 'doc', ...res };
     }
     if (ext === 'vsdx' || ext === 'vsdm') {
@@ -1050,5 +1272,5 @@
 
   window.ISM = window.ISM || {};
   const fromCards = (cards, opts) => buildFromCards(cards, opts.sheetName || '', opts);
-  window.ISM.convert = { fromFile, fromCards, modalityOf, categoryOf, typeOf, DOC_TYPE_LIST, DOC_LEVELS, sentences, loadScript, VENDOR };
+  window.ISM.convert = { fromFile, fromCards, remark, rulesVersion, RULES, modalityOf, categoryOf, typeOf, DOC_TYPE_LIST, DOC_LEVELS, sentences, loadScript, VENDOR };
 })();

@@ -68,8 +68,8 @@
     if (entries[0]) visit(entries[0].child);
     let miniStream = null;
     let miniFat = null;
-    function stream(name) {
-      const e = top.find((x) => x.type === 2 && x.name === name);
+    function stream(name) { return readEntry(top.find((x) => x.type === 2 && x.name === name)); }
+    function readEntry(e) {
       if (!e) return null;
       if (e.size >= cutoff) return readChain(e.start, e.size);
       if (!miniStream) {
@@ -84,7 +84,24 @@
       secs.forEach((s, i) => out.set(miniStream.subarray(s * mini, s * mini + mini), i * mini));
       return out.subarray(0, e.size);
     }
-    return { stream, names: top.map((e) => e.name) };
+    // Поток по пути внутри хранилищ: ['ObjectPool', '_1234', 'Package'] (встроенные объекты)
+    const kidsOf = (i) => { const out = []; const sn = new Set(); const v = (k) => { if (k >= entries.length || k >= END || sn.has(k)) return; sn.add(k); out.push(entries[k]); v(entries[k].left); v(entries[k].right); }; v(i); return out; };
+    function streamPath(names) {
+      let level = entries[0] ? kidsOf(entries[0].child) : [];
+      let e = null;
+      for (let k = 0; k < names.length; k++) {
+        e = level.find((x) => x.name === names[k]);
+        if (!e) return null;
+        if (k < names.length - 1) level = kidsOf(e.child);
+      }
+      return e && e.type === 2 ? readEntry(e) : null;
+    }
+    function list(names) {
+      let level = entries[0] ? kidsOf(entries[0].child) : [];
+      for (const n of names) { const e = level.find((x) => x.name === n); if (!e) return []; level = kidsOf(e.child); }
+      return level.map((x) => ({ name: x.name, type: x.type }));
+    }
+    return { stream, streamPath, list, names: top.map((e) => e.name) };
   }
 
   /* ---------- Свойства (sprm) ---------- */
@@ -126,6 +143,26 @@
       else if (op === S.itap) p.itap = b[i] | (b[i + 1] << 8);
       else if (op === S.innerTtp) p.innerTtp = !!b[i];
       else if (op === S.innerCell) p.innerCell = !!b[i];
+      else if (op === 0x2403 || op === 0x2461) p.jc = b[i];
+      else if (op === 0xA413) p.before = b[i] | (b[i + 1] << 8);
+      else if (op === 0xA414) p.after = b[i] | (b[i + 1] << 8);
+      else if (op === 0x6412) { p.line = (b[i] | (b[i + 1] << 8)) << 16 >> 16; p.lineMult = !!(b[i + 2] | (b[i + 3] << 8)); }
+    });
+    return p;
+  }
+
+  // Свойства символов: рисунок (sprmCPicLocation, sprmCFSpec), встроенный объект (sprmCFOle2/sprmCFObj), кегль, полужирный
+  function charSprms(bytes) {
+    const p = {};
+    if (!bytes) return p;
+    eachSprm(bytes, (op, b, i) => {
+      if (op === 0x6A03) p.picLoc = (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+      else if (op === 0x0855) p.spec = !!b[i];
+      else if (op === 0x080A || op === 0x085A) p.ole = !!b[i];
+      else if (op === 0x0806) p.data = !!b[i];
+      else if (op === 0x4A43) p.hps = b[i] | (b[i + 1] << 8);
+      else if (op === 0x0835) p.bold = b[i] === 1 || b[i] === 0x81;
+      else if (op === 0x0836) p.italic = b[i] === 1 || b[i] === 0x81;
     });
     return p;
   }
@@ -203,6 +240,13 @@
     const [fcBtePapx, lcbBtePapx] = fib(0x102);
     const [fcPlfLst, lcbPlfLst] = cbRgFcLcb >= 75 ? fib(0x2E2) : [0, 0];
     const [fcPlfLfo, lcbPlfLfo] = cbRgFcLcb >= 75 ? fib(0x2EA) : [0, 0];
+    const [fcBteChpx, lcbBteChpx] = fib(0xFA);
+    const [fcPlcSpa, lcbPlcSpa] = fib(0x1DA);
+    const [fcDgg, lcbDgg] = fib(0x22A);
+    const [fcTxbx, lcbTxbx] = fib(0x25A);
+    const [fcSed, lcbSed] = fib(0xCA);
+    const ccpTxbxStart = ccpText + W.getInt32(0x50, true) + W.getInt32(0x54, true) + W.getInt32(0x5C, true) + W.getInt32(0x60, true);
+    const ccpTxbx = W.getInt32(0x64, true);
     const inTbl = (o, n) => o >= 0 && o + n <= tbl.length;
 
     // 1. Таблица фрагментов: какие участки потока WordDocument составляют текст и в какой кодировке
@@ -259,6 +303,36 @@
       return null;
     };
 
+    // 2а. Свойства символов: страницы FKP CHPX (рисунки, объекты, кегль)
+    const chpx = [];
+    if (lcbBteChpx >= 12 && inTbl(fcBteChpx, lcbBteChpx)) {
+      const n = Math.floor((lcbBteChpx - 4) / 8);
+      for (let i = 0; i < n; i++) {
+        const pn = T.getUint32(fcBteChpx + (n + 1) * 4 + i * 4, true) & 0x3FFFFF;
+        const po = pn * 512;
+        if (po + 512 > wd.length) continue;
+        const crun = wd[po + 511];
+        for (let k = 0; k < crun; k++) {
+          const fcS = W.getUint32(po + k * 4, true);
+          const fcE = W.getUint32(po + (k + 1) * 4, true);
+          const bOff = wd[po + (crun + 1) * 4 + k] * 2;
+          let props = {};
+          if (bOff) { const cb = wd[po + bOff]; if (po + bOff + 1 + cb <= po + 512) props = charSprms(wd.subarray(po + bOff + 1, po + bOff + 1 + cb)); }
+          chpx.push({ fcS, fcE, props });
+        }
+      }
+      chpx.sort((a, b) => a.fcS - b.fcS);
+    }
+    const chpxAt = (fc) => {
+      let lo = 0, hi = chpx.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const x = chpx[mid];
+        if (fc < x.fcS) hi = mid - 1; else if (fc >= x.fcE) lo = mid + 1; else return x.props;
+      }
+      return {};
+    };
+
     // 3. Стили: имя, встроенный номер (sti 1–9 — «Заголовок 1–9»), наследование, список и уровень структуры
     const styles = [];
     if (lcbStshf > 4 && inTbl(fcStshf, lcbStshf)) {
@@ -288,11 +362,14 @@
           for (let k = 0; k < cch && q + k * 2 + 2 <= p; k++) name += String.fromCharCode(T.getUint16(q + k * 2, true));
           q += cch * 2 + 2;
           let props = {};
+          let chp = {};
           if (stk === 1 && cupx >= 1 && q + 2 <= p) {
             const cbUpx = T.getUint16(q, true);
             if (cbUpx >= 2 && q + 2 + cbUpx <= p) props = paraSprms(tbl.subarray(q + 4, q + 2 + cbUpx));
+            let q2 = q + 2 + cbUpx; if (q2 % 2) q2++;
+            if (cupx >= 2 && q2 + 2 <= p) { const cb2 = T.getUint16(q2, true); if (cb2 && q2 + 2 + cb2 <= p) chp = charSprms(tbl.subarray(q2 + 2, q2 + 2 + cb2)); }
           }
-          styles.push({ sti, stk, istdBase, name: name.split(',')[0], props });
+          styles.push({ sti, stk, istdBase, name: name.split(',')[0], props, chp });
         } catch { styles.push(null); }
       }
     }
@@ -387,7 +464,62 @@
       return { text, kind, bullet: false };
     }
 
-    // 5. Текст: абзацы до знака абзаца (\r), ячейки таблиц до знака ячейки (\x07); поля — только результат
+    // Символы диапазона CP по таблице фрагментов: fn(ch, fc, cp)
+    function eachChar(cpFrom, cpTo, fn) {
+      for (const pc of pieces) {
+        if (pc.cpEnd <= cpFrom || pc.cpStart >= cpTo) continue;
+        const a = Math.max(pc.cpStart, cpFrom), b = Math.min(pc.cpEnd, cpTo);
+        for (let cp = a; cp < b; cp++) {
+          const fc = pc.fc + (cp - pc.cpStart) * (pc.compressed ? 1 : 2);
+          if (fc + (pc.compressed ? 1 : 2) > wd.length) return;
+          let ch = pc.compressed ? wd[fc] : wd[fc] | (wd[fc + 1] << 8);
+          if (pc.compressed && ch >= 0x80 && ch <= 0x9F) ch = CP1252[ch] || ch;
+          fn(ch, fc, cp);
+        }
+      }
+    }
+
+    // Страница: размер и поля последнего раздела (SEPX), в пунктах — для положения плавающих фигур
+    const page = { w: 595.3, h: 841.9, left: 85.05, right: 42.55, top: 56.7, bottom: 56.7 };
+    try {
+      if (lcbSed >= 16 && inTbl(fcSed, lcbSed)) {
+        const n = Math.floor((lcbSed - 4) / 16);
+        const fcSepx = T.getInt32(fcSed + (n + 1) * 4 + (n - 1) * 12 + 2, true);
+        if (fcSepx > 0 && fcSepx + 2 < wd.length) {
+          const cb = W.getUint16(fcSepx, true);
+          eachSprm(wd.subarray(fcSepx + 2, Math.min(wd.length, fcSepx + 2 + cb)), (op, b, i) => {
+            const v = (b[i] | (b[i + 1] << 8)) << 16 >> 16;
+            const u = b[i] | (b[i + 1] << 8);
+            if (op === 0xB01F) page.w = u / 20; else if (op === 0xB020) page.h = u / 20;
+            else if (op === 0xB021) page.left = u / 20; else if (op === 0xB022) page.right = u / 20;
+            else if (op === 0x9023) page.top = Math.abs(v) / 20; else if (op === 0x9024) page.bottom = Math.abs(v) / 20;
+          });
+        }
+      }
+    } catch { /* поля по умолчанию */ }
+    const textW = page.w - page.left - page.right, textH = page.h - page.top - page.bottom;
+    let estY = 0;
+    const nextPage = (v) => Math.ceil((v + 0.01) / textH) * textH;
+    // высота абзаца: строки × межстрочный интервал + интервалы до/после (свойства абзаца → стиль)
+    const defHps0 = () => (styles[0] && styles[0].chp && styles[0].chp.hps) || 24;
+    function paraHeight(chars, px) {
+      const pp = px ? px.props : {};
+      const istd = px ? px.istd : 0;
+      const g = (k) => pp[k] ?? styleProp(istd, k);
+      let hps = defHps0();
+      for (let k = istd, guard = 0; styles[k] && guard < 12; k = styles[k].istdBase, guard++) { if (styles[k].chp && styles[k].chp.hps) { hps = styles[k].chp.hps; break; } if (styles[k].istdBase === 0x0FFF) break; }
+      const size = hps / 2;
+      const lines = Math.max(1, Math.ceil(chars * size * 0.47 / Math.max(100, textW)));
+      const natural = size * 1.15;
+      const line = g('line');
+      let lh = natural;
+      if (line) lh = g('lineMult') ? natural * line / 240 : line < 0 ? -line / 20 : Math.max(line / 20, natural);
+      return lines * lh + (g('before') || 0) / 20 + (g('after') || 0) / 20;
+    }
+
+    // 5. Текст: абзацы до знака абзаца (\r), ячейки таблиц до знака ячейки (\x07); поля — только результат.
+    // Рисунки: символ 0x01 (в строке; PICF в потоке Data или объект ObjectPool) и 0x08 (плавающая фигура, PlcSpa) —
+    // запоминаются и выводятся блоками {type:'pending'} после своего абзаца.
     const blocks = [];
     let text = '';
     const fields = [];
@@ -395,11 +527,16 @@
     let row = null;
     let cell = [];
     let inToc = false;
+    let pics = [];
+    let cellPics = [];
     const flushTable = () => {
       if (row && row.length) rows.push(row);
       const good = (rows || []).filter((r) => r.some((x) => x.lines.length));
       if (good.length) blocks.push({ type: 'table', rows: good });
-      rows = null; row = null; cell = [];
+      const py = estY;
+      good.forEach((r) => { const cw = textW / Math.max(1, r.length); estY += Math.max(1, ...r.map((c) => c.lines.reduce((a, l) => a + Math.max(1, Math.ceil(l.length * 5.4 / Math.max(30, cw - 10))), 0))) * 13.8 + 4; });
+      cellPics.forEach((pc) => blocks.push({ type: 'pending', pic: pc, py }));
+      rows = null; row = null; cell = []; cellPics = [];
     };
     function paragraph(t, px) {
       const istd = px ? px.istd : 0;
@@ -440,39 +577,101 @@
       if (ch === 0x07 || (pp.inTable && (pp.itap || 1) >= 1)) {
         if (!rows) rows = [];
         if (!row) row = [];
+        cellPics.push(...pics); pics = [];
         if (ch === 0x07 && pp.ttp) { if (row.length) rows.push(row); row = null; cell = []; return; }
         if (t) cell.push(t);
         if (ch === 0x07) { row.push({ lines: cell }); cell = []; }
         return;
       }
       if (rows) flushTable();
+      const py = estY;
+      estY += paraHeight(t.length, px);
       if (t) paragraph(t, px);
+      pics.forEach((pc) => blocks.push({ type: 'pending', pic: pc, py }));
+      pics = [];
+      if (ch === 0x0C) estY = nextPage(estY);
     }
+    let fieldObj = null;
     const limit = Math.max(0, ccpText);
-    for (const pc of pieces) {
-      const cpEnd = Math.min(pc.cpEnd, limit);
-      for (let cp = pc.cpStart; cp < cpEnd; cp++) {
-        const fc = pc.fc + (cp - pc.cpStart) * (pc.compressed ? 1 : 2);
-        if (fc + (pc.compressed ? 1 : 2) > wd.length) break;
-        let ch = pc.compressed ? wd[fc] : wd[fc] | (wd[fc + 1] << 8);
-        if (pc.compressed && ch >= 0x80 && ch <= 0x9F) ch = CP1252[ch] || ch;
-        if (ch === 0x13) { fields.push('code'); continue; }
-        if (ch === 0x14) { if (fields.length) fields[fields.length - 1] = 'result'; continue; }
-        if (ch === 0x15) { fields.pop(); continue; }
-        if (ch === 0x0D || ch === 0x07 || ch === 0x0C) { endMark(ch, fc); continue; }
-        if (fields.length && fields[fields.length - 1] === 'code') continue;
-        if (ch === 0x0B || ch === 0x09 || ch === 0xA0) { text += ' '; continue; }
-        if (ch === 0x1E) { text += '-'; continue; }
-        if (ch < 0x20 || ch === 0x1F) continue; // рисунки, сноски, мягкий перенос
-        text += String.fromCharCode(ch);
+    eachChar(0, limit, (ch, fc, cp) => {
+      if (ch === 0x13) { fields.push('code'); return; }
+      if (ch === 0x14) {
+        if (fields.length) fields[fields.length - 1] = 'result';
+        const cx = chpxAt(fc);
+        if (cx.ole && cx.picLoc !== undefined) fieldObj = cx.picLoc;
+        return;
       }
-    }
-    if (norm(text)) endMark(0x0D, -1);
+      if (ch === 0x15) { fields.pop(); if (!fields.length) fieldObj = null; return; }
+      if (ch === 0x0D || ch === 0x07 || ch === 0x0C) { endMark(ch, fc); return; }
+      if (fields.length && fields[fields.length - 1] === 'code') return;
+      if (ch === 0x01) {
+        const cx = chpxAt(fc);
+        if (cx.picLoc === undefined || cx.data) return;
+        if (cx.ole) pics.push({ kind: 'docpic', obj: cx.picLoc, fc: null });
+        else pics.push({ kind: 'docpic', fc: cx.picLoc, obj: fieldObj });
+        return;
+      }
+      if (ch === 0x08) { pics.push({ kind: 'docshape', cp }); return; }
+      if (ch === 0x0B || ch === 0x09 || ch === 0xA0) { text += ' '; return; }
+      if (ch === 0x1E) { text += '-'; return; }
+      if (ch < 0x20 || ch === 0x1F) return; // сноски, мягкий перенос
+      text += String.fromCharCode(ch);
+    });
+    if (norm(text) || pics.length) endMark(0x0D, -1);
     if (rows) flushTable();
+
+    // 6. Рисунки и фигуры: таблица привязок (PlcSpa), надписи (подокумент надписей), OfficeArt (DggInfo)
+    let art = null;
+    if (blocks.some((b) => b.type === 'pending')) {
+      const spa = [];
+      try {
+        if (lcbPlcSpa >= 30 && inTbl(fcPlcSpa, lcbPlcSpa)) {
+          const n = Math.floor((lcbPlcSpa - 4) / 30);
+          for (let i = 0; i < n; i++) {
+            const o2 = fcPlcSpa + (n + 1) * 4 + i * 26;
+            const fl = T.getUint16(o2 + 20, true);
+            spa.push({ cp: T.getInt32(fcPlcSpa + i * 4, true), spid: T.getInt32(o2, true), x0: T.getInt32(o2 + 4, true) / 20, y0: T.getInt32(o2 + 8, true) / 20, x1: T.getInt32(o2 + 12, true) / 20, y1: T.getInt32(o2 + 16, true) / 20, bx: (fl >> 1) & 3, by: (fl >> 3) & 3, below: !!(fl & 0x4000) });
+          }
+        }
+      } catch { /* без привязок */ }
+      const txbx = [];
+      try {
+        if (lcbTxbx >= 26 && inTbl(fcTxbx, lcbTxbx) && ccpTxbx > 0) {
+          const n = Math.floor((lcbTxbx - 4) / 26);
+          const defHps = (styles[0] && styles[0].chp && styles[0].chp.hps) || 24;
+          for (let i = 0; i < n; i++) {
+            const a = T.getInt32(fcTxbx + i * 4, true), b = T.getInt32(fcTxbx + (i + 1) * 4, true);
+            const lid = T.getInt32(fcTxbx + (n + 1) * 4 + i * 22 + 14, true);
+            const paras = [];
+            let cur = { s: '', hps: null, bold: false };
+            const fl = [];
+            eachChar(ccpTxbxStart + a, ccpTxbxStart + Math.min(b, ccpTxbx), (ch, fc) => {
+              if (ch === 0x13) { fl.push('code'); return; }
+              if (ch === 0x14) { if (fl.length) fl[fl.length - 1] = 'result'; return; }
+              if (ch === 0x15) { fl.pop(); return; }
+              if (ch === 0x0D || ch === 0x07 || ch === 0x0C) {
+                const px = papxAt(fc);
+                const jc = px ? (px.props.jc ?? styleProp(px.istd, 'jc')) : undefined;
+                cur.align = jc === 1 ? 'center' : jc === 2 ? 'right' : 'left';
+                paras.push(cur); cur = { s: '', hps: null, bold: false }; return;
+              }
+              if (fl.length && fl[fl.length - 1] === 'code') return;
+              if (ch === 0x0B || ch === 0x09 || ch === 0xA0) { cur.s += ' '; return; }
+              if (ch < 0x20) return;
+              if (cur.hps === null) { const cx = chpxAt(fc); cur.hps = cx.hps || defHps; cur.bold = !!cx.bold; }
+              cur.s += String.fromCharCode(ch);
+            });
+            if (cur.s) paras.push(cur);
+            txbx.push({ spid: lid, paras: paras.filter((x) => norm(x.s)).map((x) => ({ s: norm(x.s), size: (x.hps || defHps) / 2, bold: x.bold, align: x.align || 'left' })) });
+          }
+        }
+      } catch { /* без надписей */ }
+      art = { wd, tbl, data: c.stream('Data'), cfb: c, dgg: lcbDgg > 8 && inTbl(fcDgg, lcbDgg) ? tbl.subarray(fcDgg, fcDgg + lcbDgg) : null, spa, txbx, page, defSize: ((styles[0] && styles[0].chp && styles[0].chp.hps) || 24) / 2 };
+    }
     const meta = {};
     const title = summaryTitle(c.stream('\u0005SummaryInformation'));
     if (title.length > 3) meta.coreTitle = title;
-    return { blocks, meta };
+    return { blocks, meta, art };
   }
 
   window.ISM = window.ISM || {};
